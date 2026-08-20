@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="ISO-8859-1"?>
+<system xmlns="http://www.eiffel.com/developers/xml/configuration-1-23-0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.eiffel.com/developers/xml/configuration-1-23-0 http://www.eiffel.com/developers/xml/configuration-1-23-0.xsd" name="simple_ocr_capture" uuid="3F8A6C21-9D74-4E15-B0A3-7C62E48D5109" library_target="simple_ocr_capture">
+	<description>Screen-region OCR capture tool - region capture, local VLM OCR, additive text output</description>
+
+	<target name="simple_ocr_capture">
+		<root all_classes="true"/>
+		<file_rule>
+			<exclude>/EIFGENs$</exclude>
+			<exclude>/\..*$</exclude>
+			<exclude>/spike$</exclude>
+		</file_rule>
+		<option warning="warning">
+			<assertions precondition="true" postcondition="true" check="true" invariant="true" loop="true" supplier_precondition="true"/>
+		</option>
+		<setting name="dead_code_removal" value="feature"/>
+		<capability>
+			<concurrency support="scoop" use="thread"/>
+			<void_safety support="all"/>
+		</capability>
+		<external_include location="$(SIMPLE_EIFFEL)/simple_ocr_capture/Clib"/>
+		<library name="base" location="$ISE_LIBRARY\library\base\base.ecf"/>
+		<library name="time" location="$ISE_LIBRARY\library\time\time.ecf"/>
+		<library name="vision2" location="$ISE_LIBRARY\library\vision2\vision2.ecf"/>
+		<!-- Deliberately NOT simple_http: it resolves libcurl.dll at runtime from
+		     EiffelStudio's studio\spec\win64\bin, which is not on PATH, so a
+		     finalized binary fails with a bare "cURL issue". Shipping it would
+		     mean redistributing libcurl in the installer. OCR_HTTP uses WinHTTP
+		     instead - present on every Windows, no redistributable.
+		     simple_json and simple_base64 are pure Eiffel and stay. -->
+		<library name="simple_json" location="$SIMPLE_EIFFEL/simple_json/simple_json.ecf"/>
+		<library name="simple_base64" location="$SIMPLE_EIFFEL/simple_base64/simple_base64.ecf"/>
+		<library name="simple_process" location="$SIMPLE_EIFFEL/simple_process/simple_process.ecf"/>
+		<cluster name="src" location=".\src\" recursive="true"/>
+	</target>
+
+	<!-- Headless: --worker (spawned per capture) and --shot (pipeline check). -->
+	<target name="ocr_cli" extends="simple_ocr_capture">
+		<root class="OCR_CLI" feature="make"/>
+		<setting name="console_application" value="true"/>
+	</target>
+
+	<!-- The shipped application. Not a console app: the GUI must not drag a
+	     console window along, and worker mode reports through files. -->
+	<target name="ocr_capture" extends="simple_ocr_capture">
+		<root class="OCR_APP" feature="make"/>
+		<setting name="console_application" value="false"/>
+	</target>
+
+	<!-- Throwaway: proves OCR_HOTKEY fires system-wide. Delete once folded in. -->
+	<target name="hotkey_spike" extends="simple_ocr_capture">
+		<root class="HOTKEY_SPIKE" feature="make"/>
+		<file_rule>
+			<exclude>/EIFGENs$</exclude>
+			<exclude>/\..*$</exclude>
+		</file_rule>
+		<setting name="console_application" value="true"/>
+		<cluster name="spike" location=".\spike\"/>
+	</target>
+
+</system>

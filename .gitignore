@@ -1,0 +1,38 @@
+# Eiffel build artifacts
+EIFGENs/
+Documentation/
+
+# Compiled files
+*.melted
+*.o
+*.obj
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Backup files
+*.swp
+*.bak
+*~
+
+# IDE files
+.vscode/
+.idea/
+
+# OS files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+exception_trace.log
+*.epr
+*.log
+
+# Built installers. The shipped .exe is published as a GitHub Release asset
+# instead - ten of them accumulated here come to 47 MB of build output.
+installer/output/
+
+# Scratch captures from manual testing. Same shape as a real run's output
+# folder, and regenerated whenever the app is exercised.
+test_output/

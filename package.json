@@ -1,0 +1,9 @@
+{
+  "name": "simple_ocr_capture",
+  "version": "1.6.0",
+  "description": "Screen-region OCR capture tool - region capture, local VLM OCR, additive text output",
+  "author": "Larry Rix",
+  "license": "MIT",
+  "category": "application",
+  "keywords": ["ocr", "capture", "screenshot", "vlm", "ollama", "gui"]
+}

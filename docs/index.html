@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>simple_ocr_capture - Screen-Region OCR Capture for Windows</title>
+    <link rel="stylesheet" href="css/style.css">
+    <link rel="icon" type="image/png" href="images/logo.png">
+</head>
+<body>
+    <header>
+        <div class="logo-container">
+            <img src="images/logo.svg" alt="simple_* logo" class="logo">
+        </div>
+        <h1>simple_ocr_capture</h1>
+        <p class="tagline">Read a book through your screen &mdash; local OCR, one page at a time</p>
+        <div class="badges">
+            <img src="https://img.shields.io/badge/License-MIT-blue.svg" alt="MIT License">
+            <img src="https://img.shields.io/badge/Eiffel-25.02-purple.svg" alt="Eiffel 25.02">
+            <img src="https://img.shields.io/badge/DBC-Contracts-green.svg" alt="Design by Contract">
+            <img src="https://img.shields.io/badge/Platform-Windows%20x64-lightgrey.svg" alt="Windows x64">
+        </div>
+    </header>
+
+    <nav>
+        <ul>
+            <li><a href="#overview">Overview</a></li>
+            <li><a href="#install">Install</a></li>
+            <li><a href="#features">Features</a></li>
+            <li><a href="#building">Building</a></li>
+            <li><a href="#limitations">Limitations</a></li>
+            <li><a href="https://github.com/simple-eiffel/simple_ocr_capture">GitHub</a></li>
+        </ul>
+    </nav>
+
+    <main>
+        <section id="overview">
+            <h2>Overview</h2>
+            <p>
+                <strong>simple_ocr_capture</strong> captures a region of the screen, runs it
+                through a local OCR model, and appends the text to a single file. Set the
+                capture region once, then hit the hotkey after each page turn &mdash; the
+                text accumulates in the order you captured it.
+            </p>
+            <p>
+                Given an advance button to click and a page indicator to read, it will do the
+                turning itself and read a whole book unattended, stopping on its own when the
+                page stops changing.
+            </p>
+            <p>
+                Everything runs locally. Nothing leaves the machine.
+            </p>
+            <p>
+                <strong>This is an application, not a library.</strong> It is a Windows GUI
+                program you install and run. It belongs to the
+                <a href="https://github.com/simple-eiffel">simple_*</a> ecosystem because it is
+                written in Eiffel on top of the simple_* libraries, not because you would add
+                it to an ECF.
+            </p>
+        </section>
+
+        <section id="install">
+            <h2>Install</h2>
+
+            <div class="quick-start">
+                <h3>Download</h3>
+                <p>
+                    Grab the latest installer from
+                    <a href="https://github.com/simple-eiffel/simple_ocr_capture/releases">Releases</a>
+                    and run it. It is a per-user install: no UAC prompt, and the application
+                    only ever writes to <code>%APPDATA%</code> and the output folder you choose.
+                </p>
+            </div>
+
+            <h3>Requirements</h3>
+            <ul>
+                <li><strong>Windows 10 or 11</strong>, 64-bit</li>
+                <li><strong><a href="https://ollama.com/download">Ollama</a></strong> &mdash;
+                    installed only; the application starts and supervises it</li>
+                <li><strong>An OCR model</strong> &mdash; offered for download on first run</li>
+            </ul>
+            <p>
+                Nothing else. The application ships as a single executable and needs no runtime,
+                no redistributable and no Python.
+            </p>
+            <p>
+                The default model is olmOCR-2 (about 9.5 GB). A discrete GPU with 12 GB or more
+                of VRAM is strongly recommended; a full page takes roughly 25&ndash;45 seconds
+                on an RTX 5070 Ti.
+            </p>
+
+            <h3>First run</h3>
+            <ol>
+                <li>Launch it. You do <strong>not</strong> need to start Ollama yourself.</li>
+                <li>If the model is missing it offers to download it &mdash; the window stays
+                    usable meanwhile.</li>
+                <li><strong>Set Region by Dragging...</strong> and drag over the area you want
+                    transcribed. Esc or right-click cancels.</li>
+                <li>Set the output folder.</li>
+                <li><strong>Test Capture</strong> to confirm the region is right.</li>
+                <li><strong>Check Setup / Install Model</strong> for a full report on the chain.</li>
+            </ol>
+        </section>
+
+        <section id="features">
+            <h2>Features</h2>
+
+            <h3>Capture</h3>
+            <ul>
+                <li><strong>Drag to set the region</strong> &mdash; no coordinate typing</li>
+                <li><strong>System-wide hotkey</strong> &mdash; Ctrl+Alt+G by default, works
+                    while the reader has focus</li>
+                <li><strong>Region outlines</strong> &mdash; all three rectangles drawn on the
+                    desktop, each with its own colour and dash pattern, and taken out of frame
+                    automatically at the shutter so they are never photographed into the capture</li>
+                <li><strong>Meaningful file names</strong> &mdash; images named from the page
+                    indicator the reader itself displays
+                    (<code>ocr_Page_90-92_of_139.png</code>) rather than a counter that means
+                    nothing outside the program</li>
+                <li><strong>PNG or BMP</strong> output</li>
+            </ul>
+
+            <h3>Unattended runs</h3>
+            <ul>
+                <li><strong>Auto-advance</strong> &mdash; clicks the page-turn button and keeps going</li>
+                <li><strong>Stops rather than guesses</strong> &mdash; a page that will not turn
+                    ends the run and says why, instead of clicking blindly on</li>
+                <li><strong>Duplicate suppression</strong> &mdash; text identical to the block
+                    just written is not appended again</li>
+                <li><strong>Focus-preserving clicks</strong> &mdash; the pointer and foreground
+                    window are put back as they were found</li>
+            </ul>
+
+            <h3>Output and diagnostics</h3>
+            <ul>
+                <li><strong>One transcript file</strong>, appended to, with optional per-capture
+                    header lines</li>
+                <li><strong>Progress strip</strong> &mdash; scan rate, page rate and ETA once a
+                    run has two captures behind it</li>
+                <li><strong>Findings grid</strong> &mdash; problems the run noticed itself, each
+                    with its remedy</li>
+                <li><strong>Run log</strong> &mdash; the starting rectangles and decisions for
+                    every page, because a box aimed wrong is the usual failure and coordinates
+                    are unreconstructable after the fact</li>
+                <li><strong>No silent folder creation</strong> &mdash; a mistyped output path is
+                    confirmed before it becomes a directory</li>
+            </ul>
+        </section>
+
+        <section id="building">
+            <h2>Building from source</h2>
+            <p>Requires EiffelStudio 25.02 and, for the installer, Inno Setup 6.</p>
+<pre><code>git clone https://github.com/simple-eiffel/simple_ocr_capture.git
+cd simple_ocr_capture
+
+export SIMPLE_EIFFEL=/d/prod    <span class="comment"># where the simple_* libraries live</span>
+
+./build.sh -c     <span class="comment"># type-check only</span>
+./build.sh        <span class="comment"># finalize the GUI application</span>
+./build.sh -i     <span class="comment"># finalize, then build the installer</span></code></pre>
+            <p>Binaries land in <code>EIFGENs/&lt;target&gt;/F_code/</code>.</p>
+
+            <h3>Targets</h3>
+            <ul>
+                <li><code>ocr_capture</code> &mdash; the shipped GUI application</li>
+                <li><code>ocr_cli</code> &mdash; headless <code>--worker</code> (spawned per
+                    capture) and <code>--shot</code> (pipeline check)</li>
+                <li><code>hotkey_spike</code> &mdash; throwaway proof that the system-wide
+                    hotkey fires</li>
+            </ul>
+
+            <h3>Dependencies</h3>
+            <p>
+                <code>base</code>, <code>time</code>, <code>vision2</code>, plus
+                <a href="https://github.com/simple-eiffel/simple_json">simple_json</a>,
+                <a href="https://github.com/simple-eiffel/simple_base64">simple_base64</a> and
+                <a href="https://github.com/simple-eiffel/simple_process">simple_process</a>.
+            </p>
+            <p>
+                Deliberately <strong>not</strong> simple_http: it resolves
+                <code>libcurl.dll</code> at runtime from a path that is not on
+                <code>PATH</code>, so a finalized binary fails with a bare "cURL issue".
+                <code>OCR_HTTP</code> uses WinHTTP instead &mdash; present on every Windows,
+                with nothing to redistribute.
+            </p>
+        </section>
+
+        <section id="limitations">
+            <h2>Known limitations</h2>
+            <ul>
+                <li>
+                    The model <strong>normalises visually ambiguous characters</strong>. A
+                    lowercase <code>l</code> inside a hash or serial number can come back as a
+                    digit <code>1</code>, and prompting does not prevent it &mdash; it is
+                    inherent to a language model reading rather than a character classifier. Do
+                    not trust the output for checksums, licence keys, base64 or similar
+                    high-entropy strings without checking them. Prose, footnotes and tables are
+                    where it is strong.
+                </li>
+                <li>
+                    Captures are sequential. Triggering during a cycle is ignored rather than
+                    queued, and the hotkey is ignored entirely while auto-advance is running.
+                </li>
+                <li>
+                    Auto-advance clicks a fixed point on the screen. Move or resize the reader
+                    window mid-run and the click lands elsewhere; the page then fails to turn,
+                    which stops the run, but the advance box needs re-dragging.
+                </li>
+                <li>
+                    The window opens at a size tuned for a 150% display and may look oversized
+                    at 100%. It is freely resizable; the chosen size is not yet remembered.
+                </li>
+            </ul>
+        </section>
+    </main>
+
+    <footer>
+        <p>
+            <strong>simple_ocr_capture</strong> is part of the
+            <a href="https://github.com/simple-eiffel">simple_*</a> ecosystem
+        </p>
+        <p class="copyright">
+            Copyright &copy; 2026 Larry Rix. MIT License.
+        </p>
+    </footer>
+</body>
+</html>
