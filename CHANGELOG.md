@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.7.0] - 2026-08-20
+
 ### Added
 
 - **Delete Images** and **Move Images** buttons in the settings window, for
@@ -113,5 +115,6 @@ not kept; the dates are those of the published installer artifacts.
 | 1.1.0 | 2026-08-08 |
 | 1.0.0 | 2026-08-06 |
 
-[Unreleased]: https://github.com/simple-eiffel/simple_ocr_capture/compare/v1.6.0...HEAD
+[Unreleased]: https://github.com/simple-eiffel/simple_ocr_capture/compare/v1.7.0...HEAD
+[1.7.0]: https://github.com/simple-eiffel/simple_ocr_capture/compare/v1.6.0...v1.7.0
 [1.6.0]: https://github.com/simple-eiffel/simple_ocr_capture/releases/tag/v1.6.0

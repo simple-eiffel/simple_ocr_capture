@@ -15,7 +15,7 @@
 ; ============================================================================
 
 #define AppName        "Simple OCR Capture"
-#define AppVersion     "1.6.0"
+#define AppVersion     "1.7.0"
 #define AppPublisher   "Larry Rix"
 #define AppExeName     "simple_ocr_capture.exe"
 #define SourceExe      "..\EIFGENs\ocr_capture\F_code\simple_ocr_capture.exe"
