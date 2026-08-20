@@ -9,6 +9,7 @@
 #   -l, --cli        Finalize the headless CLI (--worker / --shot)
 #   -r, --release    Finalize both lean and fat binaries of the app
 #   -i, --installer  Build the Inno Setup installer (implies --app)
+#   -t, --tests      Finalize and run the test suite
 #   -h, --help       Show this help
 #
 # Examples:
@@ -24,9 +25,9 @@
 # goes through /d/prod/ec.sh, which is the only supported entry point, and
 # every binary lands in EIFGENs/<target>/F_code/.
 #
-# There is also no test target to run. This is a GUI application whose
-# behaviour is the screen, the Win32 hotkey and a local OCR server; it has
-# no *_tests target, so there is nothing here for a unit-test runner to do.
+# The test target covers the pure-logic classes only. The rest of this
+# application is a window, a Win32 hotkey, a screen grab or an HTTP call to a
+# local model, none of which a unit-test runner can assert about.
 # ---------------------------------------------------------------------------
 
 set -e
@@ -50,7 +51,8 @@ while [[ $# -gt 0 ]]; do
         -l|--cli)       MODE="cli";       shift ;;
         -r|--release)   MODE="release";   shift ;;
         -i|--installer) MODE="installer"; shift ;;
-        -h|--help)      sed -n '2,17p' "$0"; exit 0 ;;
+        -t|--tests)     MODE="tests";     shift ;;
+        -h|--help)      sed -n '2,18p' "$0"; exit 0 ;;
         *) echo "Unknown option: $1"; exit 1 ;;
     esac
 done
@@ -79,6 +81,18 @@ case $MODE in
         echo -e "${BLUE}Finalizing the headless CLI...${NC}"
         "$EC_SH" test -config "$ECF" -target ocr_cli
         ;;
+    tests)
+        echo -e "${BLUE}Building the test runner...${NC}"
+        "$EC_SH" test -config "$ECF" -target simple_ocr_capture_tests
+        EXE="$SCRIPT_DIR/EIFGENs/simple_ocr_capture_tests/F_code/simple_ocr_capture.exe"
+        if [ ! -f "$EXE" ]; then
+            echo -e "${RED}ERROR: test runner not found at $EXE${NC}"
+            exit 1
+        fi
+        echo -e "${BLUE}Running tests...${NC}"
+        "$EXE"
+        ;;
+
     release)
         echo -e "${BLUE}Building lean and fat binaries...${NC}"
         "$EC_SH" release -config "$ECF" -target ocr_capture

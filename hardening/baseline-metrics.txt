@@ -1,0 +1,33 @@
+--- indicator reader ---
+  [Page 224 of 416] -> 224 of 416
+  [90-92 / 139] -> 92 of 139
+  [Location 3120 of 8890] -> 3120 of 8890
+  [Page iii of 214] -> nothing (correct - not enough numbers)
+  [Page 10 of 379] -> 10 of 379
+  [] -> nothing (correct - not enough numbers)
+  [no numbers at all] -> nothing (correct - not enough numbers)
+
+--- rate arithmetic ---
+captures         : 11
+scans/min        : 2.7272727272727271   (expect ~2.73)
+pages/scan       : 3   (expect 3.0)
+pages/min        : 8.1818181818181817   (expect ~8.18)
+position         : 130 of 485
+ETA minutes      : 43   (expect 43 = (485-130)/8.18)
+summary          : 2.7 scans/min  8.2 pages/min  at 130 of 485  ETA 43 min
+percent complete : 26%   (expect 26 = 130/485)
+finish clock     : 4:12 PM   (now + 43 min)
+--- strip lines (as drawn, one per row) ---
+2.7 scan/min   8.2 pg/min
+ETA 43 min   (355 pages left)
+finishing about 4:12 PM
+
+--- garbled indicator is ignored, not obeyed ---
+position after garble: 266   (expect 266, NOT 352)
+pages/min            : 5.4545454545454541   (expect 5.45 = 6 pages over 66s; the garbled capture contributed time but no readable pages)
+
+--- combined page+location indicator ---
+  [Page 12 of 170  Location 890 of 8890] -> 890 of 8890
+  [Page iii of 214  Location 120 of 8890] -> 120 of 8890
+  [Location 45 of 8890] -> 45 of 8890
+  [Page 12/170] -> 12 of 170

@@ -136,6 +136,14 @@ feature -- Element change
 			total_implies_position: has_total implies has_position
 			ordered: has_total implies total > position
 			counted: pair_count >= 0
+				-- X03 contract assault. Each of these states something the
+				-- implementation is believed to guarantee but never said.
+			position_positive: has_position implies position > 0
+			found_implies_pair: has_total implies pair_count > 0
+			none_implies_quiet: pair_count = 0 implies not has_position
+			total_bounded: has_total implies total <= Maximum_value
+			quiet_position: not has_position implies position = 0
+			quiet_total: not has_total implies total = 0
 		end
 
 feature {NONE} -- Implementation
@@ -164,5 +172,20 @@ feature {NONE} -- Implementation
 		end
 
 	Maximum_digits: INTEGER = 9
+
+	Maximum_value: INTEGER = 999_999_999
+			-- Largest value `Maximum_digits' can produce. Named so the
+			-- postcondition can state the bound the digit cap implies.
+
+invariant
+		-- X03 contract assault. The class carried no invariant at all, so
+		-- nothing prevented a half-set state from being read as a real one.
+	position_not_negative: position >= 0
+	total_not_negative: total >= 0
+	pair_count_not_negative: pair_count >= 0
+	consistent: has_total implies has_position
+	ordered: has_total implies total > position
+	quiet_when_absent: not has_position implies position = 0
+	paired: has_position = has_total
 
 end

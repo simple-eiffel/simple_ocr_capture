@@ -20,6 +20,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `--images list|delete|move <folder> [drive]` and `--settings [drive]` headless
   verbs, so the above is testable without a GUI.
 
+### Testing
+
+- **Test target `simple_ocr_capture_tests`**, following the ecosystem pattern:
+  `TEST_APP` console runner over `LIB_TESTS` and `ADVERSARIAL_TESTS`, both on
+  `TEST_SET_BASE` from simple_testing. **41 tests, all passing.** Run with
+  `./build.sh -t`.
+- **Contract assault (maintenance-xtreme X01-X03)** on the pure-logic classes.
+  13 new contracts on `OCR_PAGE_POSITION`, which previously had no invariant at
+  all and no preconditions. All 13 hold and stay as hardening. Evidence in
+  `hardening/`.
+
+### Known behaviour recorded
+
+- `OCR_PAGE_POSITION` returns **no position for the last page of a book**
+  ("Page 416 of 416") or a single-page document ("1 of 1"), because a pair
+  requires the total to be strictly greater than the position. Documented in
+  `hardening/X03-CONTRACTS-LOG.md` as finding X03-001 and asserted in the test
+  suite, so changing it is a deliberate act. Not changed.
+- A minus sign in an indicator is dropped: "Page -5 of 416" reads as 5 (X03-002).
+- Two blank OCR reads compare as "the same screen", so a twice-failing model
+  stops an unattended run reporting a failed page turn (X03-003).
+
 ### Notes
 
 - A move copies, re-checks the destination size, and only then removes the

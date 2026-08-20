@@ -1,0 +1,50 @@
+Running simple_ocr_capture tests...
+
+-- library tests --
+  PASS: test_position_simple
+  PASS: test_position_slash
+  PASS: test_position_largest_total_wins
+  PASS: test_position_refuses_non_numeric
+  PASS: test_position_resets_between_labels
+  PASS: test_compare_identical
+  PASS: test_compare_rewrapped
+  PASS: test_compare_different
+  PASS: test_compare_symmetric
+  PASS: test_image_name_from_indicator
+  PASS: test_image_name_strips_separators
+  PASS: test_image_name_falls_back_to_counter
+  PASS: test_json_escapes_quotes
+  PASS: test_store_destination_folder
+  PASS: test_store_normalizes_bare_drive_letter
+  PASS: test_store_trailing_separator
+  PASS: test_store_drive_root_has_no_leaf
+
+-- adversarial tests --
+  PASS: test_last_page_of_book_reads_as_nothing
+  PASS: test_zero_position_refused
+  PASS: test_inverted_pair_refused
+  PASS: test_overlong_numbers_refused
+  PASS: test_minus_sign_is_ignored
+  PASS: test_separator_is_case_insensitive
+  PASS: test_adjacent_numbers_are_not_a_pair
+  PASS: test_separators_without_numbers
+  PASS: test_chained_pairs_take_largest_total
+  PASS: test_two_blank_screens_compare_equal
+  PASS: test_whitespace_only_is_empty
+  PASS: test_one_empty_one_full_is_not_same
+  PASS: test_single_character_texts
+  PASS: test_head_and_tail_cannot_double_count
+  PASS: test_very_different_lengths
+  PASS: test_name_never_exceeds_cap
+  PASS: test_name_rejects_every_forbidden_character
+  PASS: test_name_never_ends_in_underscore
+  PASS: test_name_of_nothing_falls_back
+  PASS: test_counter_padding_survives_large_index
+  PASS: test_store_refuses_empty_folder_gracefully
+  PASS: test_store_forward_slashes
+  PASS: test_store_folder_with_spaces
+  PASS: test_store_outcome_starts_clean
+
+========================
+Results: 41 passed, 0 failed
+ALL TESTS PASSED

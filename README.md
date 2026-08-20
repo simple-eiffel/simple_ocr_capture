@@ -124,6 +124,7 @@ export SIMPLE_EIFFEL=/d/prod    # where the simple_* libraries live
 
 ./build.sh -c     # type-check only
 ./build.sh        # finalize the GUI application
+./build.sh -t     # finalize and run the test suite
 ./build.sh -i     # finalize, then build the installer
 ```
 
@@ -136,6 +137,7 @@ Binaries land in `EIFGENs/<target>/F_code/`.
 | `ocr_capture` | The shipped GUI application |
 | `ocr_cli` | Headless `--worker` (spawned per capture) and `--shot` (pipeline check) |
 | `hotkey_spike` | Throwaway proof that the system-wide hotkey fires |
+| `simple_ocr_capture_tests` | Console test runner (41 tests) |
 
 ### Dependencies
 

@@ -46,6 +46,18 @@
 		<setting name="console_application" value="false"/>
 	</target>
 
+	<!-- Test runner. Console, so results land on stdout rather than in a window.
+	     Both testing libraries per ecosystem standard: ISE testing for EQA and
+	     AutoTest integration, simple_testing for TEST_SET_BASE and its richer
+	     assertions. -->
+	<target name="simple_ocr_capture_tests" extends="simple_ocr_capture">
+		<root class="TEST_APP" feature="make"/>
+		<setting name="console_application" value="true"/>
+		<library name="testing" location="$ISE_LIBRARY\library\testing\testing.ecf"/>
+		<library name="simple_testing" location="$SIMPLE_EIFFEL\simple_testing\simple_testing.ecf"/>
+		<cluster name="test" location=".\testing\" recursive="true"/>
+	</target>
+
 	<!-- Throwaway: proves OCR_HOTKEY fires system-wide. Delete once folded in. -->
 	<target name="hotkey_spike" extends="simple_ocr_capture">
 		<root class="HOTKEY_SPIKE" feature="make"/>
