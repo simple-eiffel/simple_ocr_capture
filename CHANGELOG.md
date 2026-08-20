@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Delete Images** and **Move Images** buttons in the settings window, for
+  clearing a finished book's screenshots out of the output folder or moving
+  them onto a roomier drive. Both match `ocr_*.png` and `ocr_*.bmp` only, so
+  the transcript, the `.sidecar.txt` files and the `.findings.jsonl` are never
+  touched, and both confirm with a count and a total size before doing anything.
+- **Move to drive** setting, persisted. The destination is that drive plus the
+  output folder's own name - `D:` with `C:\Books\Boyarin` gives `D:\Boyarin` -
+  and the full path is shown in the confirmation before anything moves.
+- `--images list|delete|move <folder> [drive]` and `--settings [drive]` headless
+  verbs, so the above is testable without a GUI.
+
+### Notes
+
+- A move copies, re-checks the destination size, and only then removes the
+  original: `copy_to` reports nothing, so deleting on faith would lose images
+  to a full disk. A file already present at the destination is skipped rather
+  than overwritten, and one unreadable file no longer abandons the batch.
+
 ## [1.6.0] - 2026-08-19
 
 First release published to GitHub. The application had been developed and

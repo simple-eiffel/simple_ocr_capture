@@ -76,6 +76,9 @@ first run; a discrete GPU with 12 GB or more of VRAM is strongly recommended.
 - **Run log** — every page's starting rectangles and decisions, because a box
   aimed wrong is the usual failure and coordinates are unreconstructable later
 - **No silent folder creation** — a mistyped output path asks before it becomes a directory
+- **Clear or archive the images** — delete a finished book's screenshots, or move
+  them to a like-named folder on a roomier drive, matching `ocr_*.png` and
+  `ocr_*.bmp` only and never overwriting anything already at the destination
 
 ---
 

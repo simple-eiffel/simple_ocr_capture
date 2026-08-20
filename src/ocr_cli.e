@@ -13,6 +13,12 @@ note
 		  --health                      Run every setup check and print the
 		                                report. Exit 0 when all pass, 1 when any
 		                                fails, so it can gate a script.
+
+		  --images <verb> <folder>      list, delete or move the ocr_*.png and
+		                                ocr_*.bmp files in a folder. The same
+		                                OCR_IMAGE_STORE the two buttons in the
+		                                settings window drive, reachable without
+		                                a GUI so its behaviour can be checked.
 	]"
 
 class
@@ -53,6 +59,10 @@ feature {NONE} -- Initialization
 				run_postclick (l_args)
 			elseif l_args.argument_count >= 1 and then l_args.argument (1).same_string_general ("--audit") then
 				run_audit (l_args)
+			elseif l_args.argument_count >= 1 and then l_args.argument (1).same_string_general ("--images") then
+				run_images (l_args)
+			elseif l_args.argument_count >= 1 and then l_args.argument (1).same_string_general ("--settings") then
+				run_settings (l_args)
 			else
 				print_usage
 			end
@@ -739,6 +749,105 @@ feature {NONE} -- Modes
 			end
 		end
 
+	run_settings (a_args: ARGUMENTS_32)
+			-- Print what `load' actually read back off disk, and optionally
+			-- write a drive back through `store' first.
+			--
+			-- Round-tripping a setting is otherwise unverifiable without the
+			-- GUI: `store' writes and `apply' reads, and a key missing from
+			-- either one looks exactly like a key that works until the day the
+			-- application is restarted.
+		local
+			l_settings: OCR_SETTINGS
+		do
+			create l_settings
+			l_settings.load
+			if a_args.argument_count >= 2 then
+				l_settings.set_move_to_drive (a_args.argument (2))
+				l_settings.store
+				l_settings.load
+			end
+			print ("output_folder: " + utf8 (l_settings.output_folder) + "%N")
+			print ("text_file_name: " + utf8 (l_settings.text_file_name) + "%N")
+			print ("image_format: " + l_settings.image_format + "%N")
+			print ("move_to_drive: " + utf8 (l_settings.move_to_drive) + "%N")
+		end
+
+	run_images (a_args: ARGUMENTS_32)
+			-- Exercise OCR_IMAGE_STORE against a folder, with no GUI.
+			--
+			-- The settings object is built in memory and NOT loaded from disk:
+			-- pointing this at a folder must never depend on, or disturb, the
+			-- folder the user has configured.
+		local
+			l_settings: OCR_SETTINGS
+			l_store: OCR_IMAGE_STORE
+			l_verb: STRING_32
+			l_names: ARRAYED_LIST [STRING_32]
+		do
+			if a_args.argument_count < 3 then
+				io.error.put_string ("usage: --images list|delete|move <folder> [drive]%N")
+				set_exit_code (1)
+			else
+				l_verb := a_args.argument (2)
+				create l_settings
+				l_settings.set_output_folder (a_args.argument (3))
+				create l_store.make (l_settings)
+
+				if not l_store.folder_exists then
+					print ("Folder not found%N")
+					set_exit_code (1)
+				elseif l_verb.same_string_general ("list") then
+					l_names := l_store.image_names
+					print ("folder: " + utf8 (l_store.folder) + "%N")
+					print ("leaf:   " + utf8 (l_store.leaf_name) + "%N")
+					print ("count:  " + l_names.count.out + "%N")
+					print ("size:   " + utf8 (l_store.size_caption) + "%N")
+					from
+						l_names.start
+					until
+						l_names.after
+					loop
+						print ("  " + utf8 (l_names.item) + "%N")
+						l_names.forth
+					end
+					if l_names.is_empty then
+						print ("No ocr-related PNGs in folder%N")
+					end
+				elseif l_verb.same_string_general ("delete") then
+					if not l_store.has_images then
+						print ("No ocr-related PNGs in folder%N")
+					else
+						l_store.delete_all
+						print ("deleted: " + l_store.last_done.out
+							+ "  failed: " + l_store.last_failed.out + "%N")
+					end
+				elseif l_verb.same_string_general ("move") then
+					if a_args.argument_count < 4 then
+						io.error.put_string ("usage: --images move <folder> <drive>%N")
+						set_exit_code (1)
+					elseif not l_store.has_usable_leaf then
+						print ("The output folder is a drive root%N")
+						set_exit_code (1)
+					elseif not l_store.has_images then
+						print ("No ocr-related PNGs in folder%N")
+					else
+						print ("to: " + utf8 (l_store.destination_folder (a_args.argument (4))) + "%N")
+						l_store.move_all_to (a_args.argument (4))
+						print ("moved: " + l_store.last_done.out
+							+ "  skipped: " + l_store.last_skipped.out
+							+ "  failed: " + l_store.last_failed.out + "%N")
+						if not l_store.last_error.is_empty then
+							print ("error: " + utf8 (l_store.last_error) + "%N")
+						end
+					end
+				else
+					io.error.put_string ("unknown verb: " + utf8 (l_verb) + "%N")
+					set_exit_code (1)
+				end
+			end
+		end
+
 	print_usage
 		do
 			print ("simple_ocr_capture (headless modes)%N")
@@ -749,6 +858,8 @@ feature {NONE} -- Modes
 			print ("  --image-name %"<label>%"        file name a capture would get%N")
 			print ("  --compare <file-a> <file-b>   same screen, or advanced?%N")
 			print ("  --health                      check the whole setup; exit 1 if not ready%N")
+			print ("  --images list|delete|move <folder> [drive]  the ocr_* images in a folder%N")
+			print ("  --settings [drive]            print persisted settings; with an argument, store it first%N")
 		end
 
 feature {NONE} -- Constants

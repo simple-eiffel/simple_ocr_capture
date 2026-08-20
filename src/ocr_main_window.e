@@ -38,6 +38,7 @@ feature {NONE} -- Initialization
 			build_outline_group
 			build_findings_group
 			build_maintenance_row
+			build_archive_row
 			build_action_row
 
 			status_label.set_text ("Ready.")
@@ -322,6 +323,18 @@ feature {NONE} -- Construction
 			l_col.extend (l_row)
 			l_col.disable_item_expand (l_row)
 
+				-- Sits in the Output group rather than beside the button that
+				-- uses it: it is a setting that persists, not something typed
+				-- per press, and the confirmation shows the resolved
+				-- destination in full before anything is moved.
+			create field_move_drive
+			field_move_drive.set_minimum_width (Number_field_width)
+			l_row := captioned ("Move to drive", field_move_drive, Label_width)
+			l_row.disable_item_expand (field_move_drive)
+			l_row.extend (create {EV_CELL})
+			l_col.extend (l_row)
+			l_col.disable_item_expand (l_row)
+
 			l_frame.extend (l_col)
 			root_box.extend (l_frame)
 		end
@@ -551,6 +564,39 @@ feature {NONE} -- Construction
 			root_box.disable_item_expand (l_row)
 		end
 
+	build_archive_row
+			-- Clearing the captured images out, or moving them off this drive.
+			--
+			-- A row of its own, below the maintenance row. Both of these move
+			-- or destroy a book's worth of images, and neither must ever be hit
+			-- reaching for "Clear Log" - which is itself already kept away from
+			-- "Capture Now" for the same reason.
+		local
+			l_row: EV_HORIZONTAL_BOX
+			l_delete, l_move: EV_BUTTON
+			l_hint: EV_LABEL
+		do
+			create l_row
+			l_row.set_padding (Gap)
+
+			create l_delete.make_with_text ("Delete Images...")
+			l_delete.select_actions.extend (agent on_delete_images)
+			create l_move.make_with_text ("Move Images...")
+			l_move.select_actions.extend (agent on_move_images)
+
+			l_row.extend (l_delete)
+			l_row.extend (l_move)
+			l_row.disable_item_expand (l_delete)
+			l_row.disable_item_expand (l_move)
+
+			create l_hint.make_with_text ("ocr_*.png and ocr_*.bmp only")
+			l_hint.align_text_left
+			l_row.extend (l_hint)
+
+			root_box.extend (l_row)
+			root_box.disable_item_expand (l_row)
+		end
+
 	build_action_row
 			-- Capture button and strip toggle.
 		local
@@ -603,6 +649,7 @@ feature {NONE} -- Settings transfer
 			field_w.set_text (settings.region_width.out)
 			field_h.set_text (settings.region_height.out)
 			field_folder.set_text (settings.output_folder)
+			field_move_drive.set_text (settings.move_to_drive)
 			field_text_name.set_text (settings.text_file_name)
 			field_endpoint.set_text (settings.endpoint)
 			field_model.set_text (settings.model)
@@ -657,6 +704,10 @@ feature {NONE} -- Settings transfer
 			end
 
 			settings.set_output_folder (field_folder.text)
+				-- Stored even when empty, unlike the guarded values below it.
+				-- An empty box that left the old drive stored would move a book
+				-- to a destination the window is no longer showing.
+			settings.set_move_to_drive (field_move_drive.text)
 			if not field_text_name.text.is_empty then
 				settings.set_text_file_name (field_text_name.text)
 			end
@@ -1233,6 +1284,163 @@ feature {NONE} -- Events
 			end
 		end
 
+	on_delete_images
+			-- Remove the captured images from the output folder, on confirmation.
+			--
+			-- The three gates are asked in the order that makes the answer
+			-- useful: a missing folder is a different problem from an empty
+			-- one, and being told "nothing to delete" when the path is simply
+			-- wrong would send the user looking in the right folder for files
+			-- that are sitting safely in another.
+		local
+			l_question: EV_CONFIRMATION_DIALOG
+			l_prompt: STRING_32
+			l_count: INTEGER
+		do
+			store_to_settings
+			if cycle.is_busy then
+					-- Deleting out from under a capture in flight would race the
+					-- worker writing into the same folder.
+				report ("A capture is in progress - try again when it finishes.")
+			elseif not image_store.folder_exists then
+				say ("Folder not found")
+			else
+				l_count := image_store.image_count
+				if l_count = 0 then
+					say ("No ocr-related PNGs in folder")
+				else
+					create l_prompt.make (240)
+					l_prompt.append_string_general ("Delete ")
+					l_prompt.append_string_general (l_count.out)
+					l_prompt.append_string_general (" ocr-related image")
+					if l_count /= 1 then
+						l_prompt.append_character ('s')
+					end
+					l_prompt.append_string_general (" (")
+					l_prompt.append (image_store.size_caption)
+					l_prompt.append_string_general (") from%N%N    ")
+					l_prompt.append (settings.output_folder)
+					l_prompt.append_string_general ("%N%NThis cannot be undone.%N%N")
+					l_prompt.append_string_general ("Your transcript, the sidecar text files and the findings file are NOT affected - only ocr_*.png and ocr_*.bmp are removed.")
+
+					create l_question.make_with_text (l_prompt)
+					l_question.set_title ("Simple OCR Capture - Delete Images")
+					l_question.show_modal_to_window (window)
+
+					if attached l_question.selected_button as al_button
+						and then al_button.same_string_general ("OK")
+					then
+						image_store.delete_all
+						report (outcome_report ("deleted"))
+					end
+				end
+			end
+		end
+
+	on_move_images
+			-- Move the captured images onto the archive drive, on confirmation.
+			--
+			-- The point of the feature is space: a book of screenshots is
+			-- hundreds of megabytes sitting on whichever drive the reader
+			-- happens to be on, and the transcript is what is actually wanted
+			-- there afterwards.
+		local
+			l_question: EV_CONFIRMATION_DIALOG
+			l_prompt: STRING_32
+			l_count: INTEGER
+			l_target: STRING_32
+		do
+			store_to_settings
+			if cycle.is_busy then
+				report ("A capture is in progress - try again when it finishes.")
+			elseif not image_store.folder_exists then
+				say ("Folder not found")
+			elseif settings.move_to_drive.is_empty then
+				say ("Set a drive to move to first, in the Output group.")
+			elseif not image_store.has_usable_leaf then
+					-- A drive root has no folder name to reuse, and guessing one
+					-- would put a book somewhere the user never named.
+				say ("The output folder is a drive root, so there is no folder name to reuse on the other drive.%N%NChoose an output folder inside a drive.")
+			else
+				l_count := image_store.image_count
+				if l_count = 0 then
+					say ("No ocr-related PNGs in folder")
+				else
+					l_target := image_store.destination_folder (settings.move_to_drive)
+
+					create l_prompt.make (300)
+					l_prompt.append_string_general ("Move ")
+					l_prompt.append_string_general (l_count.out)
+					l_prompt.append_string_general (" ocr-related image")
+					if l_count /= 1 then
+						l_prompt.append_character ('s')
+					end
+					l_prompt.append_string_general (" (")
+					l_prompt.append (image_store.size_caption)
+					l_prompt.append_string_general (")%N%N    from  ")
+					l_prompt.append (settings.output_folder)
+					l_prompt.append_string_general ("%N    to    ")
+					l_prompt.append (l_target)
+					l_prompt.append_string_general ("%N%NThe destination folder is created if it is not there. A file already present at the destination is left alone rather than overwritten.")
+
+					create l_question.make_with_text (l_prompt)
+					l_question.set_title ("Simple OCR Capture - Move Images")
+					l_question.show_modal_to_window (window)
+
+					if attached l_question.selected_button as al_button
+						and then al_button.same_string_general ("OK")
+					then
+						image_store.move_all_to (settings.move_to_drive)
+						report (outcome_report ("moved"))
+					end
+				end
+			end
+		end
+
+	say (a_message: READABLE_STRING_GENERAL)
+			-- Show `a_message' over the window, with a single OK.
+			--
+			-- A modal rather than the status line for these two: the user has
+			-- just asked for something destructive and got nothing, and a
+			-- sentence at the bottom of the window reads as if the deletion
+			-- quietly happened.
+		local
+			l_dialog: EV_INFORMATION_DIALOG
+		do
+			create l_dialog.make_with_text (a_message)
+			l_dialog.set_title ("Simple OCR Capture")
+			l_dialog.show_modal_to_window (window)
+		end
+
+	outcome_report (a_verb: READABLE_STRING_GENERAL): STRING_32
+			-- What the last image operation did, as one status line.
+			--
+			-- Skipped and failed counts appear only when they are not zero. A
+			-- clean run should read "214 moved." and nothing more.
+		do
+			create Result.make (100)
+			if not image_store.last_error.is_empty then
+				Result.append (image_store.last_error)
+			else
+				Result.append_string_general (image_store.last_done.out)
+				Result.append_character (' ')
+				Result.append_string_general (a_verb)
+				if image_store.last_skipped > 0 then
+					Result.append_string_general (", ")
+					Result.append_string_general (image_store.last_skipped.out)
+					Result.append_string_general (" skipped (already at the destination)")
+				end
+				if image_store.last_failed > 0 then
+					Result.append_string_general (", ")
+					Result.append_string_general (image_store.last_failed.out)
+					Result.append_string_general (" could not be handled")
+				end
+				Result.append_character ('.')
+			end
+		ensure
+			non_empty: not Result.is_empty
+		end
+
 	on_capture_now
 			-- Fire a cycle from the button.
 		do
@@ -1647,6 +1855,7 @@ feature {NONE} -- Widgets
 	field_w: EV_TEXT_FIELD attribute create Result end
 	field_h: EV_TEXT_FIELD attribute create Result end
 	field_folder: EV_TEXT_FIELD attribute create Result end
+	field_move_drive: EV_TEXT_FIELD attribute create Result end
 	field_text_name: EV_TEXT_FIELD attribute create Result end
 	field_endpoint: EV_TEXT_FIELD attribute create Result end
 	field_model: EV_TEXT_FIELD attribute create Result end
@@ -1677,6 +1886,12 @@ feature {NONE} -- Widgets
 
 	outlines: OCR_OUTLINE_SET
 			-- The desktop outlines for the three configured regions.
+		attribute
+			create Result.make (settings)
+		end
+
+	image_store: OCR_IMAGE_STORE
+			-- The captured images in the output folder.
 		attribute
 			create Result.make (settings)
 		end

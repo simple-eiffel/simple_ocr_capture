@@ -35,6 +35,7 @@ feature {NONE} -- Initialization
 			save_image := True
 			add_separators := True
 			create image_format.make_from_string ("png")
+			create move_to_drive.make_from_string_general (Default_move_to_drive)
 			hotkey_modifiers := {OCR_HOTKEY}.Mod_control | {OCR_HOTKEY}.Mod_alt
 			hotkey_key := {OCR_HOTKEY}.Vk_g
 			create endpoint.make_from_string ("http://127.0.0.1:11435/api/generate")
@@ -98,6 +99,14 @@ feature -- Access: output
 	image_format: STRING_8
 			-- "png" or "bmp". PNG is lossless; JPEG is deliberately absent
 			-- because its artifacts measurably hurt OCR accuracy.
+
+	move_to_drive: STRING_32
+			-- Root drive the "Move Images" button archives captures onto.
+			--
+			-- Held here rather than asked for each time. Once a machine has a
+			-- roomy drive it is the same drive every book, and the destination
+			-- is shown in full before anything moves, so a stored value cannot
+			-- surprise anyone.
 
 	capture_index: INTEGER
 			-- Number of captures taken; drives image file numbering.
@@ -360,6 +369,17 @@ feature -- Element change
 		ensure
 			set: output_folder.same_string_general (a_folder)
 		end
+
+	set_move_to_drive (a_drive: READABLE_STRING_GENERAL)
+		do
+			create move_to_drive.make_from_string_general (a_drive)
+		ensure
+			set: move_to_drive.same_string_general (a_drive)
+		end
+
+	Default_move_to_drive: STRING_8 = "D:"
+			-- Offered on a fresh install. A second physical drive is the usual
+			-- reason to move captures off at all, and D: is where it usually is.
 
 	Default_text_file_name: STRING_8 = "ocr_capture.txt"
 			-- Name used on a fresh install, and what Clear All resets to.
@@ -650,6 +670,7 @@ feature {NONE} -- Persistence implementation
 			Result.append ("  %"save_image%": " + save_image.out.as_lower + ",%N")
 			Result.append ("  %"add_separators%": " + add_separators.out.as_lower + ",%N")
 			Result.append ("  %"image_format%": " + u.quoted (image_format) + ",%N")
+			Result.append ("  %"move_to_drive%": " + u.quoted (move_to_drive) + ",%N")
 			Result.append ("  %"hotkey_modifiers%": " + hotkey_modifiers.out + ",%N")
 			Result.append ("  %"hotkey_key%": " + hotkey_key.out + ",%N")
 			Result.append ("  %"endpoint%": " + u.quoted (endpoint) + ",%N")
@@ -697,6 +718,11 @@ feature {NONE} -- Persistence implementation
 				if al_s.same_string_general ("png") or al_s.same_string_general ("bmp") then
 					image_format := narrowed (al_s)
 				end
+			end
+			if attached a_obj.string_item ({STRING_32} "move_to_drive") as al_s
+				and then not al_s.is_empty
+			then
+				move_to_drive := al_s.twin
 			end
 			hotkey_modifiers := integer_from (a_obj, "hotkey_modifiers", hotkey_modifiers.to_integer_32).to_natural_32
 			hotkey_key := integer_from (a_obj, "hotkey_key", hotkey_key.to_integer_32).to_natural_32
@@ -811,6 +837,7 @@ feature -- Constants
 
 invariant
 	folder_attached: output_folder /= Void
+	drive_attached: move_to_drive /= Void
 	name_not_empty: not text_file_name.is_empty
 	format_known: image_format.same_string ("png") or image_format.same_string ("bmp")
 	timeout_positive: ocr_timeout_seconds > 0
