@@ -137,7 +137,7 @@ Binaries land in `EIFGENs/<target>/F_code/`.
 | `ocr_capture` | The shipped GUI application |
 | `ocr_cli` | Headless `--worker` (spawned per capture) and `--shot` (pipeline check) |
 | `hotkey_spike` | Throwaway proof that the system-wide hotkey fires |
-| `simple_ocr_capture_tests` | Console test runner (41 tests) |
+| `simple_ocr_capture_tests` | Console test runner (61 tests) |
 
 ### Dependencies
 

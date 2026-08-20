@@ -238,6 +238,178 @@ feature -- Assault: OCR_TEXT_COMPARE boundaries
 			assert_true ("in range reversed", l_cmp.agreement_percent (l_long, "x") <= 100)
 		end
 
+feature -- X06 gap closers: the similarity threshold (GAP-B)
+
+	test_similar_but_not_identical_is_the_same_screen
+			-- The band the class exists for, which no earlier test reached.
+			--
+			-- Every previous comparison test either flattened to an exact match
+			-- (so `same_string' returned early and the scoring line never ran)
+			-- or differed wildly (so any threshold rejected it). Six mutations
+			-- to the scoring line survived because of that - including setting
+			-- the threshold to 50% and to 100%. Kills X06-M24/M25/M26/M35/M37.
+		note
+			testing: "covers/{OCR_TEXT_COMPARE}.is_same_screen"
+		local
+			l_cmp: OCR_TEXT_COMPARE
+			l_a, l_b: STRING_32
+		do
+			create l_cmp
+				-- 100 characters differing in one interior character: 99 percent
+				-- alike, above the 97 percent threshold but NOT identical.
+			l_a := repeated ('a', 60) + {STRING_32} "X" + repeated ('b', 39)
+			l_b := repeated ('a', 60) + {STRING_32} "Y" + repeated ('b', 39)
+
+			assert_false ("not identical", l_a.same_string (l_b))
+			assert_true ("above threshold is same screen", l_cmp.is_same_screen (l_a, l_b))
+			assert_true ("agreement is high", l_cmp.agreement_percent (l_a, l_b) >= 97)
+			assert_true ("agreement is not 100", l_cmp.agreement_percent (l_a, l_b) < 100)
+		end
+
+	test_below_threshold_is_a_different_screen
+			-- Just under the line must be rejected.
+		note
+			testing: "covers/{OCR_TEXT_COMPARE}.is_same_screen"
+		local
+			l_cmp: OCR_TEXT_COMPARE
+			l_a, l_b: STRING_32
+		do
+			create l_cmp
+				-- 100 characters sharing only a 20-character head.
+			l_a := repeated ('a', 20) + repeated ('b', 80)
+			l_b := repeated ('a', 20) + repeated ('c', 80)
+
+			assert_false ("well below threshold", l_cmp.is_same_screen (l_a, l_b))
+			assert_true ("agreement is low", l_cmp.agreement_percent (l_a, l_b) < 97)
+		end
+
+	test_threshold_constant_is_where_it_says
+			-- Pins `Similarity_percent' itself, an unverified constant until now.
+			-- Kills X06-M35 and X06-M36.
+		note
+			testing: "covers/{OCR_TEXT_COMPARE}.Similarity_percent"
+		local
+			l_cmp: OCR_TEXT_COMPARE
+		do
+			create l_cmp
+			assert_integers_equal ("threshold", 97, l_cmp.Similarity_percent)
+		end
+
+	test_flattened_strips_trailing_space
+			-- `right_adjust' is doing real work. Kills X06-M39.
+		note
+			testing: "covers/{OCR_TEXT_COMPARE}.flattened"
+		local
+			l_cmp: OCR_TEXT_COMPARE
+		do
+			create l_cmp
+			assert_true ("no trailing space",
+				l_cmp.flattened ("alpha beta   ").same_string ({STRING_32} "alpha beta"))
+		end
+
+	test_exactly_at_the_threshold_is_the_same_screen
+			-- The boundary itself: 97 shared characters out of 100.
+			--
+			-- `is_same_screen' compares with >=, so exactly-at-threshold counts
+			-- as the same screen. Nothing reached the boundary before, so
+			-- turning >= into > survived the whole suite. Kills X06-M24.
+			--
+			-- 97 leading characters match; the trailing three differ, so the
+			-- tail contributes nothing and the score is exactly 97 percent.
+		note
+			testing: "covers/{OCR_TEXT_COMPARE}.is_same_screen"
+		local
+			l_cmp: OCR_TEXT_COMPARE
+			l_a, l_b: STRING_32
+		do
+			create l_cmp
+			l_a := repeated ('a', 97) + {STRING_32} "XYZ"
+			l_b := repeated ('a', 97) + {STRING_32} "PQR"
+
+			assert_integers_equal ("exactly at the threshold", 97,
+				l_cmp.agreement_percent (l_a, l_b))
+			assert_true ("threshold is inclusive", l_cmp.is_same_screen (l_a, l_b))
+		end
+
+	test_shorter_text_wholly_contained_is_the_same_screen
+			-- Agreement is measured against the SHORTER text, not the longer.
+			--
+			-- A reader that has painted only part of the page yields a prefix of
+			-- what the finished page will say. Measuring against the longer text
+			-- would call that a different screen and turn the page early.
+			-- Kills X06-M37.
+		note
+			testing: "covers/{OCR_TEXT_COMPARE}.is_same_screen"
+		local
+			l_cmp: OCR_TEXT_COMPARE
+			l_short, l_long: STRING_32
+		do
+			create l_cmp
+				-- The tail cap loosens along with `l_shorter', so merely padding
+				-- the longer text with more of the SAME character compensates and
+				-- proves nothing. The suffix has to differ.
+			l_short := repeated ('a', 100)
+			l_long := repeated ('a', 100) + repeated ('b', 100)
+
+			assert_false ("not identical", l_short.same_string (l_long))
+			assert_integers_equal ("all of the shorter is shared", 100,
+				l_cmp.agreement_percent (l_short, l_long))
+			assert_true ("same screen", l_cmp.is_same_screen (l_short, l_long))
+			assert_true ("and the other way round", l_cmp.is_same_screen (l_long, l_short))
+		end
+
+feature -- X06 gap closers: the digit cap (GAP-C)
+
+	test_ten_digit_value_is_refused_by_the_cap
+			-- A ten-digit number that FITS in INTEGER_32 still exceeds the cap.
+			--
+			-- The earlier overflow test used values `is_integer' rejected on its
+			-- own, so the nine-digit cap did no observable work and three
+			-- mutations to it survived. Kills X06-M05/M06/M22.
+		note
+			testing: "covers/{OCR_PAGE_POSITION}.set_from"
+		local
+			l_reader: OCR_PAGE_POSITION
+		do
+			create l_reader
+				-- 1000000000 and 2000000000 both fit in INTEGER_32.
+			l_reader.set_from ("1000000000 of 2000000000")
+			assert_false ("ten digits refused", l_reader.has_position)
+		end
+
+	test_nine_digit_value_is_accepted
+			-- The cap is nine, not eight. Kills X06-M05.
+		note
+			testing: "covers/{OCR_PAGE_POSITION}.set_from"
+		local
+			l_reader: OCR_PAGE_POSITION
+		do
+			create l_reader
+			l_reader.set_from ("100000000 of 200000000")
+			assert_true ("nine digits accepted", l_reader.has_position)
+			assert_integers_equal ("position", 100000000, l_reader.position)
+		end
+
+feature -- X06 gap closers: largest total wins (GAP-D)
+
+	test_largest_total_wins_when_it_comes_first
+			-- The class's central design decision, actually distinguished.
+			--
+			-- `test_position_largest_total_wins' put the largest pair LAST, so a
+			-- mutation keeping the last pair rather than the largest survived
+			-- it. Here the largest comes first. Kills X06-M12.
+		note
+			testing: "covers/{OCR_PAGE_POSITION}.set_from"
+		local
+			l_reader: OCR_PAGE_POSITION
+		do
+			create l_reader
+			l_reader.set_from ("Location 890 of 8890  Page 12 of 170")
+			assert_integers_equal ("largest total wins", 8890, l_reader.total)
+			assert_integers_equal ("its position", 890, l_reader.position)
+			assert_integers_equal ("two pairs seen", 2, l_reader.pair_count)
+		end
+
 feature -- Assault: OCR_IMAGE_NAME boundaries
 
 	test_name_never_exceeds_cap
@@ -289,6 +461,26 @@ feature -- Assault: OCR_IMAGE_NAME boundaries
 			l_result := l_namer.sanitized ("Page 12 of 99 ...")
 			assert_true ("not empty", not l_result.is_empty)
 			assert_true ("no trailing underscore", l_result.item (l_result.count) /= '_')
+				-- X06-M46 replaced the trim with an append and still satisfied the
+				-- check above, because "Page_12_of_99_x" also fails to end in an
+				-- underscore. Assert the RESULT, not just the symptom.
+			assert_true ("trimmed exactly", l_result.same_string ({STRING_32} "Page_12_of_99"))
+		end
+
+	test_name_never_begins_with_underscore
+			-- Leading punctuation must not produce a leading underscore.
+			-- Kills X06-M44.
+		note
+			testing: "covers/{OCR_IMAGE_NAME}.sanitized"
+		local
+			l_namer: OCR_IMAGE_NAME
+			l_result: STRING_32
+		do
+			create l_namer
+			l_result := l_namer.sanitized ("...Page 12")
+			assert_true ("not empty", not l_result.is_empty)
+			assert_true ("no leading underscore", l_result.item (1) /= '_')
+			assert_true ("exact", l_result.same_string ({STRING_32} "Page_12"))
 		end
 
 	test_name_of_nothing_falls_back
@@ -313,6 +505,45 @@ feature -- Assault: OCR_IMAGE_NAME boundaries
 			create l_namer
 			assert_true ("five digits", l_namer.padded (12345).same_string ({STRING_32} "12345"))
 			assert_true ("one digit padded", l_namer.padded (1).same_string ({STRING_32} "0001"))
+		end
+
+feature -- X06 gap closers: JSON control characters (GAP-F)
+
+	test_json_escapes_control_characters
+			-- A control character must become a \u00XX escape.
+			--
+			-- The only JSON test covered quotes, so both mutations to the
+			-- control-character branch survived. The OCR prompt is user-editable
+			-- text that lands in exactly this path. Kills X06-M59 and X06-M60.
+		note
+			testing: "covers/{OCR_JSON_UTIL}.escaped"
+		local
+			u: OCR_JSON_UTIL
+			l_text: STRING_32
+			l_out: STRING_8
+		do
+			create u
+				-- 0x01 has no short escape and must take the long form.
+			create l_text.make (3)
+			l_text.append_character ('a')
+			l_text.append_character ((1).to_character_32)
+			l_text.append_character ('b')
+			l_out := u.escaped (l_text)
+			assert_true ("uses a unicode escape", l_out.has_substring ("\u0001"))
+			assert_true ("keeps the plain characters",
+				l_out.has_substring ("a") and l_out.has_substring ("b"))
+		end
+
+	test_json_leaves_ordinary_text_alone
+			-- Printable text must pass through unescaped.
+		note
+			testing: "covers/{OCR_JSON_UTIL}.escaped"
+		local
+			u: OCR_JSON_UTIL
+		do
+			create u
+			assert_true ("unchanged",
+				u.escaped ("Transcribe all text").same_string ("Transcribe all text"))
 		end
 
 feature -- Assault: OCR_IMAGE_STORE path arithmetic
@@ -378,6 +609,18 @@ feature -- Assault: OCR_IMAGE_STORE path arithmetic
 			assert_integers_equal ("skipped", 0, l_store.last_skipped)
 			assert_integers_equal ("failed", 0, l_store.last_failed)
 			assert_true ("no error", l_store.last_error.is_empty)
+		end
+
+feature {NONE} -- Implementation
+
+	repeated (a_char: CHARACTER_32; a_count: INTEGER): STRING_32
+			-- `a_char' repeated `a_count' times.
+		require
+			not_negative: a_count >= 0
+		do
+			create Result.make_filled (a_char, a_count)
+		ensure
+			sized: Result.count = a_count
 		end
 
 end

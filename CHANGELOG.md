@@ -24,12 +24,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Test target `simple_ocr_capture_tests`**, following the ecosystem pattern:
   `TEST_APP` console runner over `LIB_TESTS` and `ADVERSARIAL_TESTS`, both on
-  `TEST_SET_BASE` from simple_testing. **41 tests, all passing.** Run with
+  `TEST_SET_BASE` from simple_testing. **61 tests, all passing.** Run with
   `./build.sh -t`.
 - **Contract assault (maintenance-xtreme X01-X03)** on the pure-logic classes.
   13 new contracts on `OCR_PAGE_POSITION`, which previously had no invariant at
   all and no preconditions. All 13 hold and stay as hardening. Evidence in
   `hardening/`.
+- **Mutation warfare (X06) and hardening (X07-X10).** Two full 60-mutation
+  campaigns, one mutation at a time, each compiled and run against the suite.
+  The first scored **69%** and exposed that the delete/move feature had no test
+  touching a real file - making the image matcher accept every file left all 41
+  tests passing, which would have deleted the transcript. 20 tests added,
+  including 8 file-backed ones. Final score **100%** of non-equivalent
+  mutations. The harness ships as `hardening/mutate.py`.
 
 ### Known behaviour recorded
 

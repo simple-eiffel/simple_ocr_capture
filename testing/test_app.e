@@ -29,6 +29,8 @@ feature {NONE} -- Initialization
 			run_lib_tests
 			print ("%N-- adversarial tests --%N")
 			run_adversarial_tests
+			print ("%N-- store file tests --%N")
+			run_store_file_tests
 
 			print ("%N========================%N")
 			print ("Results: " + passed.out + " passed, " + failed.out + " failed%N")
@@ -80,6 +82,9 @@ feature {NONE} -- Test runners
 			run_test (agent adv_tests.test_adjacent_numbers_are_not_a_pair, "test_adjacent_numbers_are_not_a_pair")
 			run_test (agent adv_tests.test_separators_without_numbers, "test_separators_without_numbers")
 			run_test (agent adv_tests.test_chained_pairs_take_largest_total, "test_chained_pairs_take_largest_total")
+			run_test (agent adv_tests.test_ten_digit_value_is_refused_by_the_cap, "test_ten_digit_value_is_refused_by_the_cap")
+			run_test (agent adv_tests.test_nine_digit_value_is_accepted, "test_nine_digit_value_is_accepted")
+			run_test (agent adv_tests.test_largest_total_wins_when_it_comes_first, "test_largest_total_wins_when_it_comes_first")
 
 			run_test (agent adv_tests.test_two_blank_screens_compare_equal, "test_two_blank_screens_compare_equal")
 			run_test (agent adv_tests.test_whitespace_only_is_empty, "test_whitespace_only_is_empty")
@@ -87,10 +92,17 @@ feature {NONE} -- Test runners
 			run_test (agent adv_tests.test_single_character_texts, "test_single_character_texts")
 			run_test (agent adv_tests.test_head_and_tail_cannot_double_count, "test_head_and_tail_cannot_double_count")
 			run_test (agent adv_tests.test_very_different_lengths, "test_very_different_lengths")
+			run_test (agent adv_tests.test_similar_but_not_identical_is_the_same_screen, "test_similar_but_not_identical_is_the_same_screen")
+			run_test (agent adv_tests.test_below_threshold_is_a_different_screen, "test_below_threshold_is_a_different_screen")
+			run_test (agent adv_tests.test_threshold_constant_is_where_it_says, "test_threshold_constant_is_where_it_says")
+			run_test (agent adv_tests.test_flattened_strips_trailing_space, "test_flattened_strips_trailing_space")
+			run_test (agent adv_tests.test_exactly_at_the_threshold_is_the_same_screen, "test_exactly_at_the_threshold_is_the_same_screen")
+			run_test (agent adv_tests.test_shorter_text_wholly_contained_is_the_same_screen, "test_shorter_text_wholly_contained_is_the_same_screen")
 
 			run_test (agent adv_tests.test_name_never_exceeds_cap, "test_name_never_exceeds_cap")
 			run_test (agent adv_tests.test_name_rejects_every_forbidden_character, "test_name_rejects_every_forbidden_character")
 			run_test (agent adv_tests.test_name_never_ends_in_underscore, "test_name_never_ends_in_underscore")
+			run_test (agent adv_tests.test_name_never_begins_with_underscore, "test_name_never_begins_with_underscore")
 			run_test (agent adv_tests.test_name_of_nothing_falls_back, "test_name_of_nothing_falls_back")
 			run_test (agent adv_tests.test_counter_padding_survives_large_index, "test_counter_padding_survives_large_index")
 
@@ -98,11 +110,31 @@ feature {NONE} -- Test runners
 			run_test (agent adv_tests.test_store_forward_slashes, "test_store_forward_slashes")
 			run_test (agent adv_tests.test_store_folder_with_spaces, "test_store_folder_with_spaces")
 			run_test (agent adv_tests.test_store_outcome_starts_clean, "test_store_outcome_starts_clean")
+			run_test (agent adv_tests.test_json_escapes_control_characters, "test_json_escapes_control_characters")
+			run_test (agent adv_tests.test_json_leaves_ordinary_text_alone, "test_json_leaves_ordinary_text_alone")
+		end
+
+	run_store_file_tests
+			-- Tests that put real files on disk. Added after X06 mutation
+			-- warfare showed the store's matching code was never executed by
+			-- the suite at all.
+		do
+			create store_tests
+			run_test (agent store_tests.test_matches_only_ocr_images, "test_matches_only_ocr_images")
+			run_test (agent store_tests.test_directory_named_like_an_image_is_not_one, "test_directory_named_like_an_image_is_not_one")
+			run_test (agent store_tests.test_counts_and_size_reflect_the_folder, "test_counts_and_size_reflect_the_folder")
+			run_test (agent store_tests.test_empty_folder_reports_nothing, "test_empty_folder_reports_nothing")
+			run_test (agent store_tests.test_delete_removes_images_and_spares_the_rest, "test_delete_removes_images_and_spares_the_rest")
+			run_test (agent store_tests.test_move_transfers_content_and_leaves_decoys, "test_move_transfers_content_and_leaves_decoys")
+			run_test (agent store_tests.test_move_skips_a_collision_rather_than_overwriting, "test_move_skips_a_collision_rather_than_overwriting")
+			run_test (agent store_tests.test_move_onto_itself_is_refused, "test_move_onto_itself_is_refused")
 		end
 
 feature {NONE} -- Implementation
 
 	lib_tests: LIB_TESTS
+
+	store_tests: STORE_FILE_TESTS
 
 	adv_tests: ADVERSARIAL_TESTS
 

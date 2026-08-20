@@ -1,0 +1,62 @@
+M01 boundary   ocr_page_position.e    KILLED <- test_position_simple, test_position_slash, test_position_largest_total_wins
+M02 arithmetic ocr_page_position.e    KILLED <- test_position_simple, test_position_slash, test_position_largest_total_wins
+M03 comparison ocr_page_position.e    KILLED <- test_position_simple, test_position_slash, test_position_largest_total_wins
+M04 boolean    ocr_page_position.e    KILLED <- test_position_simple, test_position_slash, test_position_largest_total_wins
+M05 comparison ocr_page_position.e    KILLED <- test_nine_digit_value_is_accepted
+M06 boundary   ocr_page_position.e    KILLED <- test_ten_digit_value_is_refused_by_the_cap
+M07 arithmetic ocr_page_position.e    KILLED <- test_position_simple, test_position_slash, test_position_largest_total_wins
+M08 boundary   ocr_page_position.e    KILLED <- test_position_simple, test_position_slash, test_position_largest_total_wins
+M09 comparison ocr_page_position.e    KILLED <- test_zero_position_refused
+M10 comparison ocr_page_position.e    KILLED <- test_last_page_of_book_reads_as_nothing
+M11 arithmetic ocr_page_position.e    KILLED <- test_position_simple, test_position_slash, test_position_largest_total_wins
+M12 boolean    ocr_page_position.e    KILLED <- test_largest_total_wins_when_it_comes_first
+M13 comparison ocr_page_position.e    KILLED <- test_position_largest_total_wins, test_chained_pairs_take_largest_total, test_largest_total_wins_when_it_comes_first
+M14 arithmetic ocr_page_position.e    KILLED <- test_position_slash, test_chained_pairs_take_largest_total
+M15 returns    ocr_page_position.e    KILLED <- test_position_simple, test_position_slash, test_position_largest_total_wins
+M16 boolean    ocr_page_position.e    KILLED <- test_position_simple, test_position_slash, test_position_largest_total_wins
+M17 deletion   ocr_page_position.e    KILLED <- test_position_simple, test_position_slash, test_position_largest_total_wins
+M18 deletion   ocr_page_position.e    KILLED <- test_position_resets_between_labels
+M19 boolean    ocr_page_position.e    KILLED <- test_position_refuses_non_numeric, test_position_resets_between_labels, test_last_page_of_book_reads_as_nothing
+M20 returns    ocr_page_position.e    KILLED <- test_position_largest_total_wins, test_adjacent_numbers_are_not_a_pair
+M21 deletion   ocr_page_position.e    KILLED <- test_separator_is_case_insensitive
+M22 boundary   ocr_page_position.e    KILLED <- test_ten_digit_value_is_refused_by_the_cap
+M23 returns    ocr_text_compare.e     KILLED <- test_compare_identical, test_compare_rewrapped, test_two_blank_screens_compare_equal
+M24 comparison ocr_text_compare.e     KILLED <- test_exactly_at_the_threshold_is_the_same_screen
+M25 arithmetic ocr_text_compare.e     KILLED <- test_similar_but_not_identical_is_the_same_screen
+M26 arithmetic ocr_text_compare.e     KILLED <- test_similar_but_not_identical_is_the_same_screen, test_exactly_at_the_threshold_is_the_same_screen, test_shorter_text_wholly_contained_is_the_same_screen
+M27 returns    ocr_text_compare.e     KILLED <- test_two_blank_screens_compare_equal
+M28 arithmetic ocr_text_compare.e     KILLED <- test_compare_identical, test_single_character_texts, test_head_and_tail_cannot_double_count
+M29 arithmetic ocr_text_compare.e     KILLED <- test_compare_identical, test_single_character_texts, test_exactly_at_the_threshold_is_the_same_screen
+M30 boundary   ocr_text_compare.e     KILLED <- test_compare_identical, test_single_character_texts, test_head_and_tail_cannot_double_count
+M31 comparison ocr_text_compare.e     KILLED <- test_single_character_texts, test_similar_but_not_identical_is_the_same_screen, test_exactly_at_the_threshold_is_the_same_screen
+M32 boundary   ocr_text_compare.e     KILLED <- test_compare_identical, test_single_character_texts, test_head_and_tail_cannot_double_count
+M33 arithmetic ocr_text_compare.e     KILLED <- test_compare_different, test_similar_but_not_identical_is_the_same_screen
+M34 boolean    ocr_text_compare.e     KILLED <- test_compare_rewrapped
+M35 boundary   ocr_text_compare.e     KILLED <- test_threshold_constant_is_where_it_says
+M36 boundary   ocr_text_compare.e     KILLED <- test_similar_but_not_identical_is_the_same_screen, test_threshold_constant_is_where_it_says, test_exactly_at_the_threshold_is_the_same_screen
+M37 arithmetic ocr_text_compare.e     KILLED <- test_shorter_text_wholly_contained_is_the_same_screen
+M38 arithmetic ocr_text_compare.e     KILLED <- test_head_and_tail_cannot_double_count, test_very_different_lengths, test_shorter_text_wholly_contained_is_the_same_screen
+M39 deletion   ocr_text_compare.e     KILLED <- test_flattened_strips_trailing_space
+M40 boolean    ocr_text_compare.e     KILLED <- test_compare_rewrapped
+M41 returns    ocr_image_name.e       KILLED <- test_image_name_from_indicator, test_image_name_falls_back_to_counter, test_name_of_nothing_falls_back
+M42 boundary   ocr_image_name.e       KILLED <- test_name_never_exceeds_cap
+M43 arithmetic ocr_image_name.e       SURVIVED 
+M44 boolean    ocr_image_name.e       KILLED <- test_name_never_begins_with_underscore
+M45 comparison ocr_image_name.e       KILLED <- test_image_name_from_indicator, test_name_never_ends_in_underscore, test_name_never_begins_with_underscore
+M46 deletion   ocr_image_name.e       KILLED <- test_name_never_ends_in_underscore
+M47 boundary   ocr_image_name.e       KILLED <- test_image_name_falls_back_to_counter, test_name_of_nothing_falls_back, test_counter_padding_survives_large_index
+M48 returns    ocr_image_name.e       KILLED <- test_image_name_from_indicator, test_image_name_strips_separators, test_image_name_falls_back_to_counter
+M49 boundary   ocr_image_name.e       KILLED <- test_image_name_from_indicator, test_name_never_ends_in_underscore, test_name_never_begins_with_underscore
+M50 returns    ocr_image_store.e      KILLED <- test_matches_only_ocr_images, test_counts_and_size_reflect_the_folder, test_empty_folder_reports_nothing
+M51 boolean    ocr_image_store.e      KILLED <- test_matches_only_ocr_images, test_empty_folder_reports_nothing, test_delete_removes_images_and_spares_the_rest
+M52 deletion   ocr_image_store.e      KILLED <- test_store_normalizes_bare_drive_letter
+M53 comparison ocr_image_store.e      KILLED <- test_store_destination_folder, test_store_normalizes_bare_drive_letter, test_store_trailing_separator
+M54 arithmetic ocr_image_store.e      KILLED <- test_store_destination_folder, test_store_normalizes_bare_drive_letter, test_store_trailing_separator
+M55 boolean    ocr_image_store.e      KILLED <- test_store_drive_root_has_no_leaf
+M56 deletion   ocr_image_store.e      KILLED <- test_matches_only_ocr_images, test_directory_named_like_an_image_is_not_one, test_counts_and_size_reflect_the_folder
+M57 returns    ocr_image_store.e      KILLED <- test_store_destination_folder, test_store_normalizes_bare_drive_letter, test_store_trailing_separator
+M58 deletion   ocr_json_util.e        KILLED <- test_json_escapes_quotes
+M59 comparison ocr_json_util.e        KILLED <- test_json_escapes_control_characters, test_json_leaves_ordinary_text_alone
+M60 arithmetic ocr_json_util.e        KILLED <- test_json_escapes_control_characters
+
+wrote hardening/X06-results.json (60 entries)
