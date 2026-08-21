@@ -1,24 +1,32 @@
 note
 	description: "[
-		M3: the Simple OCR Capture control surface, rebuilt on the pure
-		route - an inline-C Win32 window whose every pixel is painted by
-		simple_cairo. No Vision2 in this process.
+		The Simple OCR Capture main window, rebuilt at FUNCTIONAL PARITY
+		on the pure route - an inline-C Win32 window, every pixel painted
+		by simple_cairo. No Vision2 in this process.
 
-		REAL product machinery wired in, not mocked:
-		  OCR_SETTINGS        loaded from the same %APPDATA% file the
-		                      classic GUI reads and writes
-		  OCR_PREFLIGHT       live Ollama server + model checks on the tick
-		  OCR_HOTKEY          the product's own system-wide hotkey class,
-		                      polled exactly as the classic GUI polls it
-		  capture pipeline    Capture Now (button or hotkey) runs the real
-		                      exe in --shot mode: real screen grab, real
-		                      OCR through Ollama, output streamed into the
-		                      activity log (SIMPLE_ASYNC_PROCESS)
+		Parity with the classic window, group by group:
+		  Capture region   editable X/Y/W/H + Set Region by Dragging on a
+		                   frozen-desktop overlay (pure BitBlt, replaces
+		                   EV_SCREEN) + Test Capture with in-window thumbnail
+		  Auto-advance     editable advance/indicator regions + settle, both
+		                   drag-setters live; Start/Pause/Stop deferred with
+		                   reason (the auto-run engine drives EV outlines)
+		  Output           folder/file/drive editable, append/image/header
+		                   checkboxes, png-bmp format cycle
+		  Trigger          Ctrl/Alt/Shift + key, re-registered live
+		  OCR engine       endpoint/model/timeout/ctx editable, Check Setup
+		                   (OCR_HEALTH.run_quick) and Install Model
+		                   (runtime.pull_command, async) wired
+		  Findings         OCR_AUDIT.run over the real text file, report
+		                   shown in the table area
+		  Bottom rows      Capture Now (real --shot pipeline), Save Settings
+		                   (OCR_SETTINGS.store), strip/thumbnail checkboxes
+		                   bound to the shared settings
 
-		Deferred to M4, shown disabled WITH THEIR REASON (the
-		self-explaining-controls rule): region picker, settings editing,
-		auto-run - all Vision2-welded today (EV_SCREEN capture, EV popup
-		outlines, the 24-field settings surface).
+		Every field edits with a real caret (click to place, arrows, Home,
+		End, Delete, Backspace) - the spike's editing engine, single-line.
+		Every log/status line is mirrored to stdout so a session leaves a
+		record.
 	]"
 	author: "Larry Rix"
 	date: "$Date$"
@@ -47,24 +55,21 @@ feature {NONE} -- Initialization
 
 			create settings
 			settings.load
+			create runtime.make (settings)
+			runtime.prepare
 			create preflight.make (settings)
+			create health.make (settings, runtime, preflight)
+			create audit.make (settings)
 			create hotkey.make
 			hotkey_ok := hotkey.register (settings.hotkey_modifiers, settings.hotkey_key)
 			resolve_worker_exe
 
-			create log_lines.make (64)
-			create hit_rects.make (8)
-			log ({STRING_32} "cairo face up %/8212/ settings: " + settings.settings_path)
-			if exe_found then
-				log ({STRING_32} "worker exe: " + worker_exe)
-			else
-				log_err ({STRING_32} "worker exe not found; Capture disabled")
-			end
-			if hotkey_ok then
-				log ({STRING_32} "hotkey registered (Ctrl+Alt+G)")
-			else
-				log_err ({STRING_32} "hotkey unavailable (already taken?)")
-			end
+			create findings_lines.make (16)
+			create field_rects.make (24)
+			create check_rects.make (12)
+			create btn_rects.make (24)
+			create edit_buf.make_empty
+			set_status ({STRING_32} "loaded " + settings.settings_path)
 
 			offscreen := cairo.create_surface (Win_w, Win_h)
 			ctx := cairo.create_context (offscreen)
@@ -76,7 +81,7 @@ feature {NONE} -- Initialization
 			if hwnd = default_pointer then
 				print ("FAILED to create window%N")
 			else
-				print ("Simple OCR Capture (cairo face) up. Ctrl+Alt+G or the button captures.%N")
+				print ("Simple OCR Capture (cairo face, parity) up.%N")
 				from
 				until
 					done
@@ -89,15 +94,12 @@ feature {NONE} -- Initialization
 						until
 							ev = 0
 						loop
-							if ev = 2 then
-								on_click (ev_buf.read_integer_32 (4), ev_buf.read_integer_32 (8))
-							elseif ev = 7 then
-								on_tick
-							end
-							dirty := True
+							dispatch (ev, ev_buf.read_integer_32 (4), ev_buf.read_integer_32 (8))
 							ev := c_next (ev_buf.item)
 						end
-						if dirty and not done then
+						if overlay_mode > 0 then
+							render_overlay
+						elseif not done then
 							render
 							blit
 							if not first_png then
@@ -106,12 +108,33 @@ feature {NONE} -- Initialization
 									print ("First frame written to ocr_cairo_first_frame.png%N")
 								end
 							end
-							dirty := False
 						end
+						dirty := False
 					end
 				end
 			end
 			shutdown
+		end
+
+	dispatch (a_ev, a_a, a_b: INTEGER)
+		do
+			if a_ev = 2 then
+				on_click (a_a, a_b)
+			elseif a_ev = 3 then
+				on_char (a_a)
+			elseif a_ev = 4 then
+				on_key (a_a)
+			elseif a_ev = 7 then
+				on_tick
+			elseif a_ev = 12 then
+				on_overlay_move (a_a, a_b)
+			elseif a_ev = 13 then
+				on_overlay_down (a_a, a_b)
+			elseif a_ev = 14 then
+				on_overlay_up (a_a, a_b)
+			elseif a_ev = 15 then
+				cancel_overlay
+			end
 		end
 
 	shutdown
@@ -120,15 +143,21 @@ feature {NONE} -- Initialization
 			if attached shot_process as p then
 				p.close
 			end
+			if attached pull_process as p then
+				p.close
+			end
 			ctx.destroy
 			offscreen.destroy
 			print ("cairo face closed.%N")
 		end
 
-feature {NONE} -- Product machinery (real)
+feature {NONE} -- Product machinery
 
 	settings: OCR_SETTINGS
+	runtime: OCR_RUNTIME
 	preflight: OCR_PREFLIGHT
+	health: OCR_HEALTH
+	audit: OCR_AUDIT
 	hotkey: OCR_HOTKEY
 	hotkey_ok: BOOLEAN
 	did_preflight: BOOLEAN
@@ -163,7 +192,30 @@ feature {NONE} -- Product machinery (real)
 			end
 		end
 
-feature {NONE} -- Capture cycle (the real pipeline, product's own worker pattern)
+feature {NONE} -- Status line (mirrored to stdout)
+
+	status_msg: STRING_32
+		attribute
+			create Result.make_empty
+		end
+
+	status_is_error: BOOLEAN
+
+	set_status (a_s: STRING_32)
+		do
+			status_msg := a_s
+			status_is_error := False
+			print ({STRING_32} "%/183/ " + a_s + {STRING_32} "%N")
+		end
+
+	set_error (a_s: STRING_32)
+		do
+			status_msg := a_s
+			status_is_error := True
+			print ({STRING_32} "! " + a_s + {STRING_32} "%N")
+		end
+
+feature {NONE} -- Capture cycle (real pipeline)
 
 	shot_process: detachable SIMPLE_ASYNC_PROCESS
 	shot_t0: REAL_64
@@ -181,11 +233,11 @@ feature {NONE} -- Capture cycle (the real pipeline, product's own worker pattern
 			cmd: STRING_32
 		do
 			if is_shooting then
-				log ({STRING_32} "capture ignored %/8212/ one is already running")
+				set_status ({STRING_32} "capture ignored %/8212/ one is already running")
 			elseif not exe_found then
-				log_err ({STRING_32} "cannot capture: worker exe not found")
+				set_error ({STRING_32} "cannot capture: worker exe not found")
 			elseif not settings.is_region_valid then
-				log_err ({STRING_32} "cannot capture: region not set (use the classic GUI %/8212/ M4 brings the picker here)")
+				set_error ({STRING_32} "cannot capture: region not set")
 			else
 				create cmd.make (128)
 				cmd.append_character ('"')
@@ -204,13 +256,9 @@ feature {NONE} -- Capture cycle (the real pipeline, product's own worker pattern
 				if p.is_started then
 					shot_process := p
 					shot_t0 := c_now_ms
-					log ({STRING_32} "capture (" + a_source + {STRING_32} ") %/8212/ region "
-						+ settings.region_width.out.to_string_32 + {STRING_32} "x"
-						+ settings.region_height.out.to_string_32 + {STRING_32} " at "
-						+ settings.region_x.out.to_string_32 + {STRING_32} ","
-						+ settings.region_y.out.to_string_32)
+					set_status ({STRING_32} "capturing (" + a_source + {STRING_32} ") %/8230/")
 				else
-					log_err ({STRING_32} "worker failed to start")
+					set_error ({STRING_32} "worker failed to start")
 				end
 			end
 		end
@@ -218,103 +266,692 @@ feature {NONE} -- Capture cycle (the real pipeline, product's own worker pattern
 	poll_shot
 		local
 			lines: LIST [STRING_32]
+			shown: INTEGER
 		do
 			if attached shot_process as p and then p.has_finished then
 				last_shot_ms := c_now_ms - shot_t0
 				shots_done := shots_done + 1
 				lines := p.accumulated_output.split ('%N')
+				print ("---- shot output ----%N")
 				across lines as l loop
 					l.prune_all ('%R')
+					print (l)
+					print ("%N")
+				end
+				print ("---------------------%N")
+				findings_lines.wipe_out
+				findings_source := {STRING_32} "LAST CAPTURE (--shot output)"
+				shown := 0
+				across lines as l loop
 					l.right_adjust
-					if not l.is_empty then
-						log ({STRING_32} "  " + l)
+					if not l.is_empty and shown < Findings_visible then
+						findings_lines.extend (l.twin)
+						shown := shown + 1
 					end
 				end
 				if p.exit_code = 0 then
-					log ({STRING_32} "capture done in " + ms_str (last_shot_ms) + {STRING_32} " ms")
+					set_status ({STRING_32} "capture done in " + ms_str (last_shot_ms)
+						+ {STRING_32} " ms %/8212/ output below and on the console")
 				else
-					log_err ({STRING_32} "capture exited with code " + p.exit_code.out.to_string_32)
+					set_error ({STRING_32} "capture exited with code " + p.exit_code.out.to_string_32)
 				end
 				p.close
 				shot_process := Void
 			end
 		end
 
-feature {NONE} -- Tick
+feature {NONE} -- Model install (real, async)
 
-	ticks: INTEGER
+	pull_process: detachable SIMPLE_ASYNC_PROCESS
+	pull_ticks: INTEGER
 
-	on_tick
+	is_pulling: BOOLEAN
 		do
-			ticks := ticks + 1
-			if hotkey_ok and then hotkey.taken_presses > 0 then
-				start_shot ({STRING_32} "hotkey")
-			end
-			poll_shot
-			if not is_shooting and then (not did_preflight or ticks \\ 12 = 0) then
-				preflight.refresh
-				did_preflight := True
-			end
+			Result := attached pull_process as p and then not p.has_finished
 		end
 
-feature {NONE} -- Clicks
-
-	Act_capture: INTEGER = 1
-	Act_open_text: INTEGER = 2
-	Act_set_region: INTEGER = 3
-	Act_settings: INTEGER = 4
-
-	hit_rects: ARRAYED_LIST [TUPLE [x, y, w: REAL_64; id: INTEGER]]
-
-	remember_hit (a_x, a_y, a_w: REAL_64; a_id: INTEGER)
-		do
-			hit_rects.extend ([a_x, a_y, a_w, a_id])
-		end
-
-	on_click (a_x, a_y: INTEGER)
+	start_pull
 		local
-			ns: NATIVE_STRING
+			p: SIMPLE_ASYNC_PROCESS
 		do
-			across hit_rects as r loop
-				if a_x >= r.x and a_x <= r.x + r.w and a_y >= r.y and a_y <= r.y + 28.0 then
-					if r.id = Act_capture then
-						start_shot ({STRING_32} "button")
-					elseif r.id = Act_open_text then
-						create ns.make (settings.text_file_path)
-						if c_shell_open (ns.item) = 1 then
-							log ({STRING_32} "opened " + settings.text_file_path)
-						else
-							log_err ({STRING_32} "could not open " + settings.text_file_path)
-						end
-					elseif r.id = Act_set_region then
-						log ({STRING_32} "Set Region is M4: the picker is a full-screen Vision2 window today %/8212/ use the classic GUI meanwhile")
-					elseif r.id = Act_settings then
-						log ({STRING_32} "Settings editing is M4: 24 fields await the toolkit%/8217/s input widgets %/8212/ classic GUI meanwhile")
+			if is_pulling then
+				set_status ({STRING_32} "a model download is already running")
+			elseif not runtime.is_executable_found then
+				set_error ({STRING_32} "ollama executable not located; is Ollama installed?")
+			else
+				create p.make
+				p.set_show_window (False)
+				p.start (runtime.pull_command (settings.model))
+				if p.is_started then
+					pull_process := p
+					pull_ticks := 0
+					set_status ({STRING_32} "downloading model %/8230/ the window stays usable")
+				else
+					set_error ({STRING_32} "could not start ollama pull")
+				end
+			end
+		end
+
+	poll_pull
+		do
+			if attached pull_process as p then
+				if p.has_finished then
+					p.close
+					pull_process := Void
+					preflight.refresh
+					if preflight.is_model_present then
+						set_status ({STRING_32} "model installed %/8212/ ready to capture")
+					else
+						set_error ({STRING_32} "download finished but the model is not listed; check Ollama logs")
+					end
+				else
+					pull_ticks := pull_ticks + 1
+					if pull_ticks \\ 2 = 0 then
+						set_status ({STRING_32} "downloading model %/8230/ "
+							+ (pull_ticks // 2).out.to_string_32 + {STRING_32} "s")
 					end
 				end
 			end
 		end
 
-feature {NONE} -- Activity log
+feature {NONE} -- Tick
 
-	log_lines: ARRAYED_LIST [STRING_32]
+	ticks: INTEGER
+	blink_on: BOOLEAN
 
-	log (a_s: STRING_32)
+	on_tick
 		do
-			log_lines.extend ({STRING_32} "%/183/ " + a_s)
-			if log_lines.count > 200 then
-				log_lines.start
-				log_lines.remove
+			ticks := ticks + 1
+			blink_on := not blink_on
+			if hotkey_ok and then hotkey.taken_presses > 0 then
+				start_shot ({STRING_32} "hotkey")
+			end
+			poll_shot
+			poll_pull
+			if not is_shooting and not is_pulling
+				and then (not did_preflight or ticks \\ 12 = 0)
+			then
+				preflight.refresh
+				did_preflight := True
 			end
 		end
 
-	log_err (a_s: STRING_32)
+feature {NONE} -- Field editing engine (the spike's editor, single-line)
+
+	focused_id: INTEGER
+	edit_buf: STRING_32
+	edit_caret: INTEGER
+
+	field_value (a_id: INTEGER): STRING_32
+			-- Current display value of field `a_id' from the model.
 		do
-			log_lines.extend ({STRING_32} "! " + a_s)
-			if log_lines.count > 200 then
-				log_lines.start
-				log_lines.remove
+			inspect a_id
+			when 1 then Result := settings.region_x.out.to_string_32
+			when 2 then Result := settings.region_y.out.to_string_32
+			when 3 then Result := settings.region_width.out.to_string_32
+			when 4 then Result := settings.region_height.out.to_string_32
+			when 5 then Result := settings.advance_x.out.to_string_32
+			when 6 then Result := settings.advance_y.out.to_string_32
+			when 7 then Result := settings.advance_width.out.to_string_32
+			when 8 then Result := settings.advance_height.out.to_string_32
+			when 9 then Result := settings.page_label_x.out.to_string_32
+			when 10 then Result := settings.page_label_y.out.to_string_32
+			when 11 then Result := settings.page_label_width.out.to_string_32
+			when 12 then Result := settings.page_label_height.out.to_string_32
+			when 13 then Result := settings.advance_delay_ms.out.to_string_32
+			when 14 then Result := settings.output_folder.twin
+			when 15 then Result := settings.text_file_name.twin
+			when 16 then Result := settings.move_to_drive.twin
+			when 17 then Result := key_name (settings.hotkey_key)
+			when 18 then Result := settings.endpoint.to_string_32
+			when 19 then Result := settings.model.to_string_32
+			when 20 then Result := settings.ocr_timeout_seconds.out.to_string_32
+			when 21 then Result := settings.num_ctx.out.to_string_32
+			else
+				create Result.make_empty
 			end
+		end
+
+	focus_field (a_id: INTEGER; a_click_x: REAL_64; a_fx: REAL_64)
+		local
+			i: INTEGER
+			x: REAL_64
+		do
+			commit_focused
+			focused_id := a_id
+			edit_buf := field_value (a_id)
+			set_font (f_mono, 10.5, False)
+			edit_caret := edit_buf.count
+			x := 0.0
+			from
+				i := 1
+			until
+				i > edit_buf.count
+			loop
+				x := x + adv (one_char (edit_buf [i]))
+				if a_fx + 8.0 + x - (adv (one_char (edit_buf [i])) / 2.0) > a_click_x then
+					edit_caret := i - 1
+					i := edit_buf.count -- exit
+				end
+				i := i + 1
+			end
+			blink_on := True
+		end
+
+	commit_focused
+		local
+			v: INTEGER
+			ok: BOOLEAN
+		do
+			if focused_id > 0 then
+				ok := True
+				inspect focused_id
+				when 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 20, 21 then
+					if edit_buf.is_integer then
+						v := edit_buf.to_integer
+						inspect focused_id
+						when 1 then settings.set_region (v, settings.region_y, settings.region_width, settings.region_height)
+						when 2 then settings.set_region (settings.region_x, v, settings.region_width, settings.region_height)
+						when 3 then
+							if v > 0 then
+								settings.set_region (settings.region_x, settings.region_y, v, settings.region_height)
+							else
+								ok := False
+							end
+						when 4 then
+							if v > 0 then
+								settings.set_region (settings.region_x, settings.region_y, settings.region_width, v)
+							else
+								ok := False
+							end
+						when 5 then settings.set_advance_region (v, settings.advance_y, settings.advance_width, settings.advance_height)
+						when 6 then settings.set_advance_region (settings.advance_x, v, settings.advance_width, settings.advance_height)
+						when 7 then settings.set_advance_region (settings.advance_x, settings.advance_y, v, settings.advance_height)
+						when 8 then settings.set_advance_region (settings.advance_x, settings.advance_y, settings.advance_width, v)
+						when 9 then settings.set_page_label_region (v, settings.page_label_y, settings.page_label_width, settings.page_label_height)
+						when 10 then settings.set_page_label_region (settings.page_label_x, v, settings.page_label_width, settings.page_label_height)
+						when 11 then settings.set_page_label_region (settings.page_label_x, settings.page_label_y, v, settings.page_label_height)
+						when 12 then settings.set_page_label_region (settings.page_label_x, settings.page_label_y, settings.page_label_width, v)
+						when 13 then
+							if v >= 0 then
+								settings.set_advance_delay_ms (v)
+							else
+								ok := False
+							end
+						when 20 then
+							if v > 0 then
+								settings.set_ocr_timeout_seconds (v)
+							else
+								ok := False
+							end
+						when 21 then
+							if v > 0 then
+								settings.set_num_ctx (v)
+							else
+								ok := False
+							end
+						else
+						end
+					else
+						ok := False
+					end
+					if not ok then
+						set_error ({STRING_32} "not applied: %"" + edit_buf + {STRING_32} "%" is not a valid number here")
+					end
+				when 14 then
+					settings.set_output_folder (edit_buf)
+				when 15 then
+					if edit_buf.is_empty then
+						set_error ({STRING_32} "text file name cannot be empty")
+					else
+						settings.set_text_file_name (edit_buf)
+					end
+				when 16 then
+					settings.set_move_to_drive (edit_buf)
+				when 17 then
+					apply_key_name
+				when 18 then
+					if edit_buf.is_empty then
+						set_error ({STRING_32} "endpoint cannot be empty")
+					else
+						settings.set_endpoint (edit_buf.to_string_8)
+					end
+				when 19 then
+					if edit_buf.is_empty then
+						set_error ({STRING_32} "model cannot be empty")
+					else
+						settings.set_model (edit_buf.to_string_8)
+					end
+				else
+				end
+				focused_id := 0
+			end
+		end
+
+	key_name (a_vk: NATURAL_32): STRING_32
+		do
+			create Result.make (1)
+			if a_vk >= 0x41 and a_vk <= 0x5A then
+				Result.extend (a_vk.to_character_32)
+			elseif a_vk >= 0x30 and a_vk <= 0x39 then
+				Result.extend (a_vk.to_character_32)
+			elseif a_vk >= 0x70 and a_vk <= 0x7B then
+				Result.append_character ('F')
+				Result.append_string_general ((a_vk - 0x6F).out)
+			else
+				Result.append_string_general ("0x")
+				Result.append_string_general (a_vk.to_hex_string)
+			end
+		end
+
+	apply_key_name
+		local
+			c: CHARACTER_32
+			vk: NATURAL_32
+		do
+			if edit_buf.count = 1 then
+				c := edit_buf [1].as_upper
+				if (c >= 'A' and c <= 'Z') or (c >= '0' and c <= '9') then
+					vk := c.natural_32_code
+					settings.set_hotkey (settings.hotkey_modifiers, vk)
+					reregister_hotkey
+				else
+					set_error ({STRING_32} "trigger key must be a letter or digit")
+				end
+			else
+				set_error ({STRING_32} "trigger key must be one character")
+			end
+		end
+
+	reregister_hotkey
+		do
+			hotkey.unregister
+			hotkey_ok := hotkey.register (settings.hotkey_modifiers, settings.hotkey_key)
+			if hotkey_ok then
+				set_status ({STRING_32} "hotkey registered: " + hotkey_text)
+			else
+				set_error ({STRING_32} "hotkey unavailable: " + hotkey_text)
+			end
+		end
+
+	hotkey_text: STRING_32
+		do
+			create Result.make (16)
+			if settings.hotkey_modifiers.bit_and (2) /= 0 then
+				Result.append_string_general ("Ctrl+")
+			end
+			if settings.hotkey_modifiers.bit_and (1) /= 0 then
+				Result.append_string_general ("Alt+")
+			end
+			if settings.hotkey_modifiers.bit_and (4) /= 0 then
+				Result.append_string_general ("Shift+")
+			end
+			Result.append (key_name (settings.hotkey_key))
+		end
+
+	on_char (a_code: INTEGER)
+		do
+			if focused_id > 0 then
+				if a_code = 13 then
+					commit_focused
+				elseif a_code = 27 then
+					focused_id := 0
+				elseif a_code = 8 then
+					if edit_caret > 0 then
+						edit_buf.remove (edit_caret)
+						edit_caret := edit_caret - 1
+					end
+				elseif a_code >= 32 then
+					edit_buf.insert_character (a_code.to_character_32, edit_caret + 1)
+					edit_caret := edit_caret + 1
+				end
+				blink_on := True
+			end
+		end
+
+	on_key (a_vk: INTEGER)
+		do
+			if focused_id > 0 then
+				if a_vk = 37 and edit_caret > 0 then
+					edit_caret := edit_caret - 1
+				elseif a_vk = 39 and edit_caret < edit_buf.count then
+					edit_caret := edit_caret + 1
+				elseif a_vk = 36 then
+					edit_caret := 0
+				elseif a_vk = 35 then
+					edit_caret := edit_buf.count
+				elseif a_vk = 46 and edit_caret < edit_buf.count then
+					edit_buf.remove (edit_caret + 1)
+				end
+				blink_on := True
+			end
+		end
+
+feature {NONE} -- Drag overlay (pure-route region picker)
+
+	overlay_mode: INTEGER
+			-- 0 none | 1 capture region | 2 advance button | 3 page indicator
+
+	overlay_frozen: detachable CAIRO_SURFACE
+	drag_active: BOOLEAN
+	drag_x0, drag_y0, drag_x1, drag_y1: INTEGER
+
+	begin_overlay (a_mode: INTEGER)
+		local
+			s: CAIRO_SURFACE
+			vw, vh: INTEGER
+		do
+			commit_focused
+			vw := c_screen_w
+			vh := c_screen_h
+			s := cairo.create_surface (vw, vh)
+			if c_grab_screen (c_screen_x, c_screen_y, vw, vh, s.data, s.stride) = 1 then
+				s.mark_dirty.do_nothing
+				overlay_frozen := s
+				overlay_mode := a_mode
+				drag_active := False
+				if c_show_overlay = default_pointer then
+					set_error ({STRING_32} "overlay window failed")
+					overlay_mode := 0
+					s.destroy
+					overlay_frozen := Void
+				else
+					render_overlay
+				end
+			else
+				s.destroy
+				set_error ({STRING_32} "screen grab failed")
+			end
+		end
+
+	on_overlay_down (a_x, a_y: INTEGER)
+		do
+			drag_active := True
+			drag_x0 := a_x
+			drag_y0 := a_y
+			drag_x1 := a_x
+			drag_y1 := a_y
+		end
+
+	on_overlay_move (a_x, a_y: INTEGER)
+		do
+			if drag_active then
+				drag_x1 := a_x
+				drag_y1 := a_y
+				render_overlay
+			end
+		end
+
+	on_overlay_up (a_x, a_y: INTEGER)
+		local
+			x, y, w, h: INTEGER
+		do
+			if drag_active then
+				drag_x1 := a_x
+				drag_y1 := a_y
+				x := drag_x0.min (drag_x1) + c_screen_x
+				y := drag_y0.min (drag_y1) + c_screen_y
+				w := (drag_x1 - drag_x0).abs
+				h := (drag_y1 - drag_y0).abs
+				if w < 4 or h < 4 then
+					set_error ({STRING_32} "selection too small %/8212/ nothing changed")
+				else
+					inspect overlay_mode
+					when 1 then
+						settings.set_region (x, y, w, h)
+						set_status ({STRING_32} "capture region set to " + w.out.to_string_32
+							+ {STRING_32} " x " + h.out.to_string_32
+							+ {STRING_32} " %/8212/ Save Settings to persist")
+					when 2 then
+						settings.set_advance_region (x, y, w, h)
+						set_status ({STRING_32} "advance button set %/8212/ Save Settings to persist")
+					when 3 then
+						settings.set_page_label_region (x, y, w, h)
+						set_status ({STRING_32} "page indicator set %/8212/ Save Settings to persist")
+					else
+					end
+				end
+			end
+			cancel_overlay
+		end
+
+	cancel_overlay
+		do
+			c_hide_overlay
+			overlay_mode := 0
+			drag_active := False
+			if attached overlay_frozen as s then
+				s.destroy
+			end
+			overlay_frozen := Void
+			render
+			blit
+		end
+
+	render_overlay
+		local
+			hdc: POINTER
+			ws: CAIRO_SURFACE
+			c2: CAIRO_CONTEXT
+			x, y, w, h: REAL_64
+		do
+			hdc := c_overlay_dc
+			if hdc /= default_pointer and then attached overlay_frozen as fz then
+				create ws.make_for_dc (hdc)
+				if ws.is_valid then
+					create c2.make (ws)
+					c2.set_source_surface (fz, 0.0, 0.0).paint.do_nothing
+					c2.set_color_rgba (0.0, 0.0, 0.0, 0.25).paint.do_nothing
+					if drag_active then
+						x := drag_x0.min (drag_x1)
+						y := drag_y0.min (drag_y1)
+						w := (drag_x1 - drag_x0).abs
+						h := (drag_y1 - drag_y0).abs
+						if w > 0.0 and h > 0.0 then
+							c2.save.clip_rectangle (x, y, w.max (1.0), h.max (1.0)).do_nothing
+							c2.set_source_surface (fz, 0.0, 0.0).paint.do_nothing
+							c2.restore.do_nothing
+							c2.set_color_hex (0xAF3A22).set_line_width (2.0)
+								.rectangle (x, y, w, h).stroke.do_nothing
+						end
+					end
+					c2.destroy
+				end
+				ws.destroy
+				c_overlay_release (hdc)
+			end
+		end
+
+feature {NONE} -- Test capture (pure grab, in-window thumbnail)
+
+	thumb: detachable CAIRO_SURFACE
+	thumb_w, thumb_h: INTEGER
+
+	do_test_capture
+		local
+			s: CAIRO_SURFACE
+		do
+			commit_focused
+			if not settings.is_region_valid then
+				set_error ({STRING_32} "region not set")
+			else
+				s := cairo.create_surface (settings.region_width, settings.region_height)
+				if c_grab_screen (settings.region_x, settings.region_y,
+					settings.region_width, settings.region_height, s.data, s.stride) = 1
+				then
+					s.mark_dirty.do_nothing
+					if attached thumb as old_t then
+						old_t.destroy
+					end
+					thumb := s
+					thumb_w := settings.region_width
+					thumb_h := settings.region_height
+					set_status ({STRING_32} "test capture: " + thumb_w.out.to_string_32
+						+ {STRING_32} " x " + thumb_h.out.to_string_32
+						+ {STRING_32} " grabbed (pure BitBlt %/8212/ no Vision2)")
+				else
+					s.destroy
+					set_error ({STRING_32} "screen grab failed")
+				end
+			end
+		end
+
+feature {NONE} -- Health / audit / findings
+
+	findings_lines: ARRAYED_LIST [STRING_32]
+
+	findings_source: STRING_32
+		attribute
+			Result := {STRING_32} "FINDINGS %/8212/ problems appear here; Run Audit checks the transcript"
+		end
+
+	fill_findings_from (a_report: STRING_32; a_source: STRING_32)
+		local
+			lines: LIST [STRING_32]
+			shown: INTEGER
+		do
+			findings_lines.wipe_out
+			findings_source := a_source
+			lines := a_report.split ('%N')
+			across lines as l loop
+				l.prune_all ('%R')
+				l.right_adjust
+				if not l.is_empty and shown < Findings_visible then
+					findings_lines.extend (l.twin)
+					shown := shown + 1
+				end
+			end
+		end
+
+	do_check_setup
+		do
+			commit_focused
+			set_status ({STRING_32} "running setup checks %/8230/")
+			health.run_quick
+			fill_findings_from (health.report, {STRING_32} "SETUP CHECK (OCR_HEALTH)")
+			if health.is_healthy then
+				set_status ({STRING_32} "setup checks passed")
+			else
+				set_error ({STRING_32} "setup problems %/8212/ details below: " + health.failure_summary)
+			end
+		end
+
+	do_audit
+		do
+			commit_focused
+			set_status ({STRING_32} "auditing transcript %/8230/")
+			audit.run (settings.text_file_path)
+			fill_findings_from (audit.report,
+				{STRING_32} "AUDIT %/8212/ " + audit.finding_count.out.to_string_32 + {STRING_32} " finding(s)")
+			set_status ({STRING_32} "audit done: " + audit.finding_count.out.to_string_32
+				+ {STRING_32} " finding(s)")
+		end
+
+feature {NONE} -- Click routing
+
+	field_rects: ARRAYED_LIST [TUPLE [id: INTEGER; x, y, w: REAL_64]]
+	check_rects: ARRAYED_LIST [TUPLE [id: INTEGER; x, y: REAL_64]]
+	btn_rects: ARRAYED_LIST [TUPLE [id: INTEGER; x, y, w: REAL_64]]
+
+	on_click (a_x, a_y: INTEGER)
+		local
+			handled: BOOLEAN
+		do
+			across btn_rects as r loop
+				if not handled and then a_x >= r.x and a_x <= r.x + r.w and a_y >= r.y and a_y <= r.y + 26.0 then
+					handled := True
+					commit_focused
+					run_button (r.id)
+				end
+			end
+			across check_rects as r loop
+				if not handled and then a_x >= r.x and a_x <= r.x + 15.0 and a_y >= r.y and a_y <= r.y + 15.0 then
+					handled := True
+					commit_focused
+					toggle_check (r.id)
+				end
+			end
+			across field_rects as r loop
+				if not handled and then a_x >= r.x and a_x <= r.x + r.w and a_y >= r.y and a_y <= r.y + 22.0 then
+					handled := True
+					focus_field (r.id, a_x, r.x)
+				end
+			end
+			if not handled then
+				commit_focused
+			end
+		end
+
+	toggle_check (a_id: INTEGER)
+		do
+			inspect a_id
+			when 31 then settings.set_save_text (not settings.save_text)
+			when 32 then settings.set_save_image (not settings.save_image)
+			when 33 then settings.set_add_separators (not settings.add_separators)
+			when 34 then
+				settings.set_hotkey (settings.hotkey_modifiers.bit_xor (2), settings.hotkey_key)
+				reregister_hotkey
+			when 35 then
+				settings.set_hotkey (settings.hotkey_modifiers.bit_xor (1), settings.hotkey_key)
+				reregister_hotkey
+			when 36 then
+				settings.set_hotkey (settings.hotkey_modifiers.bit_xor (4), settings.hotkey_key)
+				reregister_hotkey
+			when 37 then
+				settings.set_show_strip (not settings.show_strip)
+				set_status ({STRING_32} "show-strip preference stored (the strip window itself is M4)")
+			when 38 then
+				settings.set_show_thumbnail (not settings.show_thumbnail)
+			else
+			end
+		end
+
+	run_button (a_id: INTEGER)
+		do
+			inspect a_id
+			when 51 then begin_overlay (1)
+			when 52 then do_test_capture
+			when 53 then begin_overlay (2)
+			when 54 then begin_overlay (3)
+			when 55, 56, 57 then
+				set_status ({STRING_32} "auto-advance transport is M4: the run engine drives Vision2 desktop outlines today")
+			when 58 then
+				set_status ({STRING_32} "Browse is M4 %/8212/ the folder field is directly editable meanwhile")
+			when 59 then
+				if settings.image_format.same_string ("png") then
+					settings.set_image_format ("bmp")
+				else
+					settings.set_image_format ("png")
+				end
+			when 60 then do_check_setup
+			when 61 then start_pull
+			when 62 then do_audit
+			when 63 then
+				findings_lines.wipe_out
+				findings_source := {STRING_32} "FINDINGS %/8212/ cleared"
+			when 64 then
+				findings_lines.wipe_out
+				findings_source := {STRING_32} "FINDINGS"
+				set_status ({STRING_32} "cleared")
+			when 65 then
+				set_status ({STRING_32} "Open Log is M4 %/8212/ the classic GUI owns the log window today")
+			when 66 then
+				set_status ({STRING_32} "Clear Log is M4")
+			when 67 then
+				set_status ({STRING_32} "the status strip window is M4 on this face; the classic strip still works")
+			when 68, 69 then
+				set_status ({STRING_32} "image housekeeping is M4 here %/8212/ classic GUI or 'simple_ocr_capture --images' meanwhile")
+			when 70 then start_shot ({STRING_32} "button")
+			when 71 then do_save
+			else
+			end
+		end
+
+	do_save
+		do
+			commit_focused
+			settings.store
+			set_status ({STRING_32} "settings saved to " + settings.settings_path)
 		end
 
 feature {NONE} -- Rendering
@@ -323,15 +960,19 @@ feature {NONE} -- Rendering
 		local
 			y: REAL_64
 		do
-			hit_rects.wipe_out
+			field_rects.wipe_out
+			check_rects.wipe_out
+			btn_rects.wipe_out
 			ctx.set_color_hex (C_bg).paint.do_nothing
 			draw_toolbar
-			y := draw_region_card (58.0)
-			y := draw_output_card (y + 10.0)
-			y := draw_engine_card (y + 10.0)
-			draw_activity_card
-			draw_actions
-			draw_strip
+			y := draw_region_group (56.0)
+			y := draw_advance_group (y + 8.0)
+			y := draw_output_group (y + 8.0)
+			y := draw_trigger_group (y + 8.0)
+			y := draw_engine_group (y + 8.0)
+			y := draw_findings_group (y + 8.0)
+			y := draw_bottom_rows (y + 8.0)
+			draw_status_line
 		end
 
 	draw_toolbar
@@ -344,8 +985,7 @@ feature {NONE} -- Rendering
 			txt (16.0, 28.0, {STRING_32} "Simple OCR Capture", C_ink)
 			x := 16.0 + adv ({STRING_32} "Simple OCR Capture") + 10.0
 			set_font (f_mono, 10.5, False)
-			txt (x, 28.0, {STRING_32} "1.7.0 %/183/ cairo face M3 %/183/ pure Win32", C_dim)
-
+			txt (x, 28.0, {STRING_32} "cairo face %/183/ functional parity %/183/ pure Win32", C_dim)
 			x := Win_w - 16.0
 			if did_preflight then
 				if preflight.is_model_present then
@@ -358,148 +998,231 @@ feature {NONE} -- Rendering
 				else
 					x := chip_r (x, 13.0, {STRING_32} "OLLAMA DOWN", C_signal, C_signal_wash, C_signal) - 8.0
 				end
-			else
-				x := chip_r (x, 13.0, {STRING_32} "CHECKING%/8230/", C_amber, C_amber_wash, C_amber) - 8.0
 			end
 			if hotkey_ok then
-				x := chip_r (x, 13.0, {STRING_32} "CTRL+ALT+G", C_blue, C_blue_wash, C_blue) - 8.0
+				x := chip_r (x, 13.0, hotkey_text.as_upper, C_blue, C_blue_wash, C_blue) - 8.0
 			else
 				x := chip_r (x, 13.0, {STRING_32} "HOTKEY TAKEN", C_signal, C_signal_wash, C_signal) - 8.0
 			end
 		end
 
-	draw_region_card (a_y: REAL_64): REAL_64
+	draw_region_group (a_y: REAL_64): REAL_64
 		local
-			h: REAL_64
+			h, x, ty: REAL_64
+			sw, sh, sc: REAL_64
 		do
-			h := 96.0
-			card (Left_x, a_y, Left_w, h, C_blue)
-			head (Left_x, a_y, {STRING_32} "CAPTURE REGION")
-			if settings.is_region_valid then
-				chip (Left_x + 150.0, a_y + 12.0, {STRING_32} "SET", C_green, C_green_wash, C_green).do_nothing
+			h := 196.0
+			card (Gx, a_y, Gw, h, C_blue)
+			head (Gx, a_y, {STRING_32} "CAPTURE REGION")
+			ty := a_y + 40.0
+			x := Gx + 14.0
+			x := do_button (x, ty, {STRING_32} "Set Region by Dragging%/8230/", 51, True) + 14.0
+			x := labeled_field (x, ty, {STRING_32} "X", 1, 60.0) + 8.0
+			x := labeled_field (x, ty, {STRING_32} "Y", 2, 60.0) + 8.0
+			x := labeled_field (x, ty, {STRING_32} "W", 3, 60.0) + 8.0
+			x := labeled_field (x, ty, {STRING_32} "H", 4, 60.0) + 20.0
+			x := do_button (x, ty, {STRING_32} "Test Capture", 52, False) + 16.0
+			set_font (f_mono, 10.5, False)
+			txt (x, ty + 16.0, {STRING_32} "Screen: " + c_screen_w.out.to_string_32
+				+ {STRING_32} " x " + c_screen_h.out.to_string_32, C_dim)
+			-- thumbnail strip
+			ty := a_y + 76.0
+			ctx.set_color_hex (C_bar).fill_rect (Gx + 14.0, ty, Gw - 28.0, 106.0).do_nothing
+			ctx.set_color_hex (C_line).set_line_width (1.0)
+				.rectangle (Gx + 14.0, ty, Gw - 28.0, 106.0).stroke.do_nothing
+			if attached thumb as t then
+				sc := (106.0 / thumb_h).min ((Gw - 28.0) / thumb_w)
+				sw := thumb_w * sc
+				sh := thumb_h * sc
+				ctx.save.do_nothing
+				ctx.translate (Gx + 14.0 + ((Gw - 28.0) - sw) / 2.0, ty + (106.0 - sh) / 2.0)
+					.scale (sc, sc).set_source_surface (t, 0.0, 0.0).paint.do_nothing
+				ctx.restore.do_nothing
 			else
-				chip (Left_x + 150.0, a_y + 12.0, {STRING_32} "NOT SET", C_signal, C_signal_wash, C_signal).do_nothing
+				set_font (f_mono, 10.0, False)
+				txt (Gx + 24.0, ty + 58.0,
+					{STRING_32} "Test Capture grabs the region with a pure BitBlt and shows it here",
+					C_dim)
 			end
-			row (Left_x, a_y + 52.0, {STRING_32} "origin",
-				settings.region_x.out.to_string_32 + {STRING_32} ", " + settings.region_y.out.to_string_32)
-			row (Left_x, a_y + 74.0, {STRING_32} "size",
-				settings.region_width.out.to_string_32 + {STRING_32} " x " + settings.region_height.out.to_string_32)
 			Result := a_y + h
 		end
 
-	draw_output_card (a_y: REAL_64): REAL_64
+	draw_advance_group (a_y: REAL_64): REAL_64
 		local
-			h, bx: REAL_64
+			h, x, ty: REAL_64
 		do
 			h := 148.0
-			card (Left_x, a_y, Left_w, h, C_green)
-			head (Left_x, a_y, {STRING_32} "OUTPUT")
-			row (Left_x, a_y + 52.0, {STRING_32} "folder", elide (settings.output_folder, 236.0))
-			row (Left_x, a_y + 74.0, {STRING_32} "file", elide (settings.text_file_name, 236.0))
-			bx := Left_x + 14.0
-			if settings.save_text then
-				bx := chip (bx, a_y + 90.0, {STRING_32} "TEXT", C_green, C_green_wash, C_green) + 6.0
-			end
-			if settings.save_image then
-				bx := chip (bx, a_y + 90.0, {STRING_32} "IMAGES", C_blue, C_blue_wash, C_blue) + 6.0
-			end
-			if settings.add_separators then
-				bx := chip (bx, a_y + 90.0, {STRING_32} "SEPARATORS", C_dim, C_bar, C_line) + 6.0
-			end
-			remember_hit (Left_x + 14.0, a_y + 114.0,
-				button (Left_x + 14.0, a_y + 114.0, {STRING_32} "Open Text File", True), Act_open_text)
-			Result := a_y + h
-		end
-
-	draw_engine_card (a_y: REAL_64): REAL_64
-		local
-			h: REAL_64
-		do
-			h := 118.0
-			card (Left_x, a_y, Left_w, h, C_amber)
-			head (Left_x, a_y, {STRING_32} "ENGINE")
-			row (Left_x, a_y + 52.0, {STRING_32} "model", elide (settings.model.to_string_32, 236.0))
-			row (Left_x, a_y + 74.0, {STRING_32} "endpoint", elide (settings.endpoint.to_string_32, 236.0))
-			row (Left_x, a_y + 96.0, {STRING_32} "timeout",
-				settings.ocr_timeout_seconds.out.to_string_32 + {STRING_32} " s %/183/ ctx " + settings.num_ctx.out.to_string_32)
-			Result := a_y + h
-		end
-
-	draw_activity_card
-		local
-			y0, y, h: REAL_64
-			i, first: INTEGER
-			s: STRING_32
-		do
-			y0 := 58.0
-			h := Strip_y - 58.0 - 56.0
-			card (Right_x, y0, Right_w, h, C_line)
-			head (Right_x, y0, {STRING_32} "ACTIVITY")
-			if is_shooting and attached shot_process as p then
-				chip_r (Right_x + Right_w - 14.0, y0 + 12.0,
-					{STRING_32} "CAPTURING %/8230/ " + p.elapsed_seconds.out.to_string_32 + {STRING_32} "s",
-					C_amber, C_amber_wash, C_amber).do_nothing
-			elseif shots_done > 0 then
-				chip_r (Right_x + Right_w - 14.0, y0 + 12.0,
-					{STRING_32} "LAST " + ms_str (last_shot_ms) + {STRING_32} " MS",
-					C_green, C_green_wash, C_green).do_nothing
-			end
-			set_font (f_mono, 10.5, False)
-			first := (log_lines.count - Log_visible + 1).max (1)
-			y := y0 + 52.0
-			from
-				i := first
-			until
-				i > log_lines.count
-			loop
-				s := log_lines [i]
-				if not s.is_empty and then s [1] = '!' then
-					txt (Right_x + 14.0, y, elide (s, Right_w - 28.0), C_signal)
-				else
-					txt (Right_x + 14.0, y, elide (s, Right_w - 28.0), C_ink)
-				end
-				y := y + 18.0
-				i := i + 1
-			end
-		end
-
-	draw_actions
-		local
-			x, y: REAL_64
-		do
-			y := Strip_y - 44.0
-			x := Right_x
-			remember_hit (x, y, button (x, y, {STRING_32} "Capture Now  (Ctrl+Alt+G)", True), Act_capture)
-			x := x + last_button_w + 10.0
-			remember_hit (x, y, button_disabled (x, y, {STRING_32} "Set Region %/8212/ M4"), Act_set_region)
-			x := x + last_button_w + 10.0
-			remember_hit (x, y, button_disabled (x, y, {STRING_32} "Settings %/8212/ M4"), Act_settings)
-		end
-
-	draw_strip
-		local
-			s: STRING_32
-		do
-			ctx.set_color_hex (C_bar).fill_rect (0.0, Strip_y, Win_w, 30.0).do_nothing
-			ctx.set_color_hex (C_line).fill_rect (0.0, Strip_y, Win_w, 1.0).do_nothing
+			card (Gx, a_y, Gw, h, C_amber)
+			head (Gx, a_y, {STRING_32} "AUTO-ADVANCE")
+			ty := a_y + 40.0
+			x := Gx + 14.0
+			x := do_button (x, ty, {STRING_32} "Set Advance Button by Dragging%/8230/", 53, False) + 14.0
+			x := labeled_field (x, ty, {STRING_32} "X", 5, 56.0) + 8.0
+			x := labeled_field (x, ty, {STRING_32} "Y", 6, 56.0) + 8.0
+			x := labeled_field (x, ty, {STRING_32} "W", 7, 48.0) + 8.0
+			x := labeled_field (x, ty, {STRING_32} "H", 8, 48.0)
+			ty := ty + 34.0
+			x := Gx + 14.0
+			x := do_button (x, ty, {STRING_32} "Set Page Indicator by Dragging%/8230/", 54, False) + 14.0
+			x := labeled_field (x, ty, {STRING_32} "X", 9, 56.0) + 8.0
+			x := labeled_field (x, ty, {STRING_32} "Y", 10, 56.0) + 8.0
+			x := labeled_field (x, ty, {STRING_32} "W", 11, 48.0) + 8.0
+			x := labeled_field (x, ty, {STRING_32} "H", 12, 48.0) + 20.0
+			x := labeled_field (x, ty, {STRING_32} "Min. settle (ms)", 13, 60.0)
+			ty := ty + 34.0
+			x := Gx + 14.0
+			x := do_button (x, ty, {STRING_32} "Start", 55, False) + 6.0
+			x := do_button (x, ty, {STRING_32} "Pause", 56, False) + 6.0
+			x := do_button (x, ty, {STRING_32} "Stop", 57, False) + 16.0
 			set_font (f_mono, 10.0, False)
-			if did_preflight then
-				if preflight.is_runtime_reachable and preflight.is_model_present then
-					s := {STRING_32} "ready %/8212/ server reachable, model present"
-				elseif preflight.is_runtime_reachable then
-					s := {STRING_32} "server up, model missing %/8212/ pull it from the classic GUI"
-				else
-					s := {STRING_32} "Ollama unreachable at " + settings.endpoint.to_string_32
-				end
-			else
-				s := {STRING_32} "first health check pending%/8230/"
-			end
-			txt (14.0, Strip_y + 19.0, elide (s, 700.0), C_dim)
-			s := {STRING_32} "shots " + shots_done.out.to_string_32 + {STRING_32} " %/183/ M3 %/183/ simple_cairo"
-			txt (Win_w - 14.0 - adv (s), Strip_y + 19.0, s, C_dim)
+			txt (x, ty + 16.0,
+				{STRING_32} "transport is M4 %/8212/ the run engine drives Vision2 outlines; fields and drag-setters are live",
+				C_dim)
+			Result := a_y + h
 		end
 
-feature {NONE} -- Card kit (spike-proven style)
+	draw_output_group (a_y: REAL_64): REAL_64
+		local
+			h, x, ty: REAL_64
+		do
+			h := 150.0
+			card (Gx, a_y, Gw, h, C_green)
+			head (Gx, a_y, {STRING_32} "OUTPUT")
+			ty := a_y + 40.0
+			x := Gx + 14.0
+			x := labeled_field (x, ty, {STRING_32} "Folder", 14, 560.0) + 10.0
+			x := do_button (x, ty, {STRING_32} "Browse%/8230/", 58, False)
+			ty := ty + 32.0
+			x := Gx + 14.0
+			x := labeled_field (x, ty, {STRING_32} "Text file", 15, 400.0) + 24.0
+			x := labeled_field (x, ty, {STRING_32} "Move to drive", 16, 50.0) + 24.0
+			set_font (f_mono, 10.5, False)
+			txt (x, ty + 16.0, {STRING_32} "Image format:", C_dim)
+			x := x + adv ({STRING_32} "Image format:") + 8.0
+			x := do_button (x, ty, settings.image_format.to_string_32.as_upper, 59, False)
+			ty := ty + 34.0
+			x := Gx + 14.0
+			x := checkbox (x, ty, {STRING_32} "Append OCR text to the file above", 31, settings.save_text) + 24.0
+			x := checkbox (x, ty, {STRING_32} "Also keep the captured image", 32, settings.save_image) + 24.0
+			x := checkbox (x, ty, {STRING_32} "Write a header line before each capture", 33, settings.add_separators)
+			Result := a_y + h
+		end
+
+	draw_trigger_group (a_y: REAL_64): REAL_64
+		local
+			h, x, ty: REAL_64
+		do
+			h := 72.0
+			card (Gx, a_y, Gw, h, C_blue)
+			head (Gx, a_y, {STRING_32} "TRIGGER")
+			ty := a_y + 38.0
+			x := Gx + 14.0
+			x := checkbox (x, ty, {STRING_32} "Ctrl", 34, settings.hotkey_modifiers.bit_and (2) /= 0) + 18.0
+			x := checkbox (x, ty, {STRING_32} "Alt", 35, settings.hotkey_modifiers.bit_and (1) /= 0) + 18.0
+			x := checkbox (x, ty, {STRING_32} "Shift", 36, settings.hotkey_modifiers.bit_and (4) /= 0) + 24.0
+			x := labeled_field (x, ty, {STRING_32} "Key", 17, 50.0) + 24.0
+			set_font (f_mono, 10.5, False)
+			txt (x, ty + 16.0, {STRING_32} "changes re-register immediately %/8212/ " + hotkey_text, C_dim)
+			Result := a_y + h
+		end
+
+	draw_engine_group (a_y: REAL_64): REAL_64
+		local
+			h, x, ty: REAL_64
+		do
+			h := 150.0
+			card (Gx, a_y, Gw, h, C_amber)
+			head (Gx, a_y, {STRING_32} "OCR ENGINE")
+			ty := a_y + 40.0
+			x := Gx + 14.0
+			x := labeled_field (x, ty, {STRING_32} "Endpoint", 18, 380.0) + 24.0
+			x := labeled_field (x, ty, {STRING_32} "Model", 19, 320.0)
+			ty := ty + 32.0
+			x := Gx + 14.0
+			x := labeled_field (x, ty, {STRING_32} "Timeout (s)", 20, 60.0) + 24.0
+			x := labeled_field (x, ty, {STRING_32} "Context tokens", 21, 80.0) + 24.0
+			set_font (f_mono, 10.0, False)
+			txt (x, ty + 16.0, {STRING_32} "image + text share this window; too low silently truncates long pages", C_dim)
+			ty := ty + 34.0
+			x := Gx + 14.0
+			x := do_button (x, ty, {STRING_32} "Check Setup", 60, True) + 8.0
+			x := do_button (x, ty, {STRING_32} "Install Model", 61, False)
+			Result := a_y + h
+		end
+
+	draw_findings_group (a_y: REAL_64): REAL_64
+		local
+			h, x, y: REAL_64
+			i: INTEGER
+		do
+			h := 66.0 + Findings_visible * 17.0 + 40.0
+			card (Gx, a_y, Gw, h, C_signal)
+			set_font (f_mono, 9.5, False)
+			tracked (Gx + 14.0, a_y + 24.0, findings_source, C_dim, 1.0).do_nothing
+			y := a_y + 46.0
+			set_font (f_mono, 10.0, False)
+			if findings_lines.is_empty then
+				txt (Gx + 14.0, y, {STRING_32} "(nothing to report)", C_dim)
+			else
+				from
+					i := 1
+				until
+					i > findings_lines.count
+				loop
+					txt (Gx + 14.0, y, elide (findings_lines [i], Gw - 28.0), C_ink)
+					y := y + 17.0
+					i := i + 1
+				end
+			end
+			y := a_y + h - 34.0
+			x := Gx + 14.0
+			x := do_button (x, y, {STRING_32} "Run Audit", 62, False) + 8.0
+			x := do_button (x, y, {STRING_32} "Clear List", 63, False) + 16.0
+			set_font (f_mono, 10.0, False)
+			txt (x, y + 16.0, {STRING_32} "Run Audit checks the finished transcript for gaps, repeats and jumps", C_dim)
+			Result := a_y + h
+		end
+
+	draw_bottom_rows (a_y: REAL_64): REAL_64
+		local
+			x, ty: REAL_64
+		do
+			ty := a_y
+			x := Gx
+			x := do_button (x, ty, {STRING_32} "Clear All", 64, False) + 6.0
+			x := do_button (x, ty, {STRING_32} "Open Log", 65, False) + 6.0
+			x := do_button (x, ty, {STRING_32} "Clear Log", 66, False) + 6.0
+			x := do_button (x, ty, {STRING_32} "Show Strip", 67, False) + 16.0
+			x := do_button (x, ty, {STRING_32} "Delete Images%/8230/", 68, False) + 6.0
+			x := do_button (x, ty, {STRING_32} "Move Images%/8230/", 69, False) + 12.0
+			set_font (f_mono, 10.0, False)
+			txt (x, ty + 16.0, {STRING_32} "ocr_*.png and ocr_*.bmp only", C_dim)
+			ty := ty + 36.0
+			x := Gx
+			x := do_button (x, ty, {STRING_32} "Capture Now  (" + hotkey_text + {STRING_32} ")", 70, True) + 10.0
+			x := do_button (x, ty, {STRING_32} "Save Settings", 71, True) + 24.0
+			x := checkbox (x, ty + 4.0, {STRING_32} "Show progress strip", 37, settings.show_strip) + 24.0
+			x := checkbox (x, ty + 4.0, {STRING_32} "Show last capture", 38, settings.show_thumbnail)
+			Result := ty + 34.0
+		end
+
+	draw_status_line
+		local
+			s: STRING_32
+		do
+			ctx.set_color_hex (C_bar).fill_rect (0.0, Win_h - 28.0, Win_w, 28.0).do_nothing
+			ctx.set_color_hex (C_line).fill_rect (0.0, Win_h - 28.0, Win_w, 1.0).do_nothing
+			set_font (f_mono, 10.0, False)
+			if status_is_error then
+				txt (14.0, Win_h - 10.0, elide (status_msg, Win_w - 260.0), C_signal)
+			else
+				txt (14.0, Win_h - 10.0, elide (status_msg, Win_w - 260.0), C_dim)
+			end
+			s := {STRING_32} "shots " + shots_done.out.to_string_32 + {STRING_32} " %/183/ parity M4-in-progress"
+			txt (Win_w - 14.0 - adv (s), Win_h - 10.0, s, C_dim)
+		end
+
+feature {NONE} -- Widget kit
 
 	card (a_x, a_y, a_w, a_h: REAL_64; a_stripe: NATURAL_32)
 		do
@@ -516,21 +1239,68 @@ feature {NONE} -- Card kit (spike-proven style)
 			tracked (a_x + 14.0, a_y + 24.0, a_title, C_dim, 1.2).do_nothing
 		end
 
-	row (a_x, a_y: REAL_64; a_label, a_value: STRING_32)
+	labeled_field (a_x, a_y: REAL_64; a_label: STRING_32; a_id: INTEGER; a_w: REAL_64): REAL_64
+			-- Label + editable field box; returns the right edge.
+		local
+			x: REAL_64
+			v: STRING_32
+			cx: REAL_64
+			i: INTEGER
 		do
 			set_font (f_mono, 10.5, False)
-			txt (a_x + 14.0, a_y, a_label, C_dim)
-			txt (a_x + 90.0, a_y, a_value, C_ink)
+			x := a_x
+			if not a_label.is_empty then
+				txt (x, a_y + 16.0, a_label, C_dim)
+				x := x + adv (a_label) + 6.0
+			end
+			if focused_id = a_id then
+				ctx.set_color_hex (C_panel).rectangle (x, a_y, a_w, 22.0).fill_preserve.do_nothing
+				ctx.set_color_hex (C_blue).set_line_width (1.6).stroke.do_nothing
+				v := edit_buf
+			else
+				ctx.set_color_hex (C_panel).rectangle (x, a_y, a_w, 22.0).fill_preserve.do_nothing
+				ctx.set_color_hex (C_line).set_line_width (1.0).stroke.do_nothing
+				v := field_value (a_id)
+			end
+			txt (x + 6.0, a_y + 16.0, elide (v, a_w - 12.0), C_ink)
+			if focused_id = a_id and blink_on then
+				cx := x + 6.0
+				from
+					i := 1
+				until
+					i > edit_caret
+				loop
+					cx := cx + adv (one_char (v [i]))
+					i := i + 1
+				end
+				ctx.set_color_hex (C_signal).fill_rect (cx, a_y + 3.0, 1.8, 16.0).do_nothing
+			end
+			field_rects.extend ([a_id, x, a_y, a_w])
+			Result := x + a_w
 		end
 
-	last_button_w: REAL_64
+	checkbox (a_x, a_y: REAL_64; a_label: STRING_32; a_id: INTEGER; a_on: BOOLEAN): REAL_64
+		do
+			ctx.set_color_hex (C_panel).rectangle (a_x, a_y + 2.0, 15.0, 15.0).fill_preserve.do_nothing
+			ctx.set_color_hex (C_line).set_line_width (1.2).stroke.do_nothing
+			if a_on then
+				ctx.set_color_hex (C_blue).set_line_width (2.0)
+					.move_to (a_x + 3.0, a_y + 9.5).line_to (a_x + 6.5, a_y + 13.0)
+					.line_to (a_x + 12.0, a_y + 5.0).stroke.do_nothing
+			end
+			set_font (f_display, 11.0, False)
+			txt (a_x + 21.0, a_y + 14.0, a_label, C_ink)
+			check_rects.extend ([a_id, a_x, a_y + 2.0])
+			Result := a_x + 21.0 + adv (a_label)
+		end
 
-	button (a_x, a_y: REAL_64; a_label: STRING_32; a_primary: BOOLEAN): REAL_64
+	do_button (a_x, a_y: REAL_64; a_label: STRING_32; a_id: INTEGER; a_primary: BOOLEAN): REAL_64
 		local
+			w: REAL_64
 			fg, bg, bd: NATURAL_32
 		do
-			set_font (f_display, 11.5, False)
-			last_button_w := 22.0 + adv (a_label)
+			set_font (f_display, 11.0, False)
+			w := 20.0 + adv (a_label)
 			if a_primary then
 				fg := C_blue
 				bg := C_blue_wash
@@ -540,49 +1310,27 @@ feature {NONE} -- Card kit (spike-proven style)
 				bg := C_panel
 				bd := C_line
 			end
-			ctx.set_color_hex (bg).rounded_rectangle (a_x, a_y, last_button_w, 28.0, 3.0).fill_preserve.do_nothing
+			ctx.set_color_hex (bg).rounded_rectangle (a_x, a_y, w, 26.0, 3.0).fill_preserve.do_nothing
 			ctx.set_color_hex (bd).set_line_width (1.0).stroke.do_nothing
-			txt (a_x + 11.0, a_y + 18.5, a_label, fg)
-			Result := last_button_w
-		end
-
-	button_disabled (a_x, a_y: REAL_64; a_label: STRING_32): REAL_64
-		do
-			set_font (f_display, 11.5, False)
-			last_button_w := 22.0 + adv (a_label)
-			ctx.set_color_hex (C_bar).rounded_rectangle (a_x, a_y, last_button_w, 28.0, 3.0).fill_preserve.do_nothing
-			ctx.set_color_hex (C_line).set_line_width (1.0).stroke.do_nothing
-			txt (a_x + 11.0, a_y + 18.5, a_label, C_dim)
-			Result := last_button_w
-		end
-
-	chip (a_x, a_y: REAL_64; a_label: STRING_32; a_fg, a_bg, a_bd: NATURAL_32): REAL_64
-		local
-			w: REAL_64
-		do
-			set_font (f_mono, 9.5, False)
-			w := 12.0
-			across a_label as c loop
-				w := w + adv (one_char (c)) + 0.6
-			end
-			ctx.set_color_hex (a_bg).rounded_rectangle (a_x, a_y, w, 18.0, 2.0).fill_preserve.do_nothing
-			ctx.set_color_hex (a_bd).set_line_width (1.0).stroke.do_nothing
-			tracked (a_x + 6.0, a_y + 13.0, a_label, a_fg, 0.6).do_nothing
+			txt (a_x + 10.0, a_y + 17.0, a_label, fg)
+			btn_rects.extend ([a_id, a_x, a_y, w])
 			Result := a_x + w
 		end
 
 	chip_r (a_right, a_y: REAL_64; a_label: STRING_32; a_fg, a_bg, a_bd: NATURAL_32): REAL_64
-			-- Right-aligned chip; returns its LEFT edge.
 		local
-			w: REAL_64
+			w, x0: REAL_64
 		do
 			set_font (f_mono, 9.5, False)
 			w := 12.0
 			across a_label as c loop
 				w := w + adv (one_char (c)) + 0.6
 			end
-			Result := a_right - w
-			chip (Result, a_y, a_label, a_fg, a_bg, a_bd).do_nothing
+			x0 := a_right - w
+			ctx.set_color_hex (a_bg).rounded_rectangle (x0, a_y, w, 18.0, 2.0).fill_preserve.do_nothing
+			ctx.set_color_hex (a_bd).set_line_width (1.0).stroke.do_nothing
+			tracked (x0 + 6.0, a_y + 13.0, a_label, a_fg, 0.6).do_nothing
+			Result := x0
 		end
 
 feature {NONE} -- Text kit
@@ -729,17 +1477,14 @@ feature {NONE} -- Geometry & palette
 
 	window_title: STRING_32
 		once
-			Result := {STRING_32} "Simple OCR Capture %/8212/ cairo face (M3)"
+			Result := {STRING_32} "Simple OCR Capture %/8212/ cairo face (parity)"
 		end
 
-	Win_w: INTEGER = 1180
-	Win_h: INTEGER = 660
-	Left_x: REAL_64 = 16.0
-	Left_w: REAL_64 = 360.0
-	Right_x: REAL_64 = 392.0
-	Right_w: REAL_64 = 772.0
-	Strip_y: REAL_64 = 630.0
-	Log_visible: INTEGER = 24
+	Win_w: INTEGER = 1120
+	Win_h: INTEGER = 1210
+	Gx: REAL_64 = 16.0
+	Gw: REAL_64 = 1088.0
+	Findings_visible: INTEGER = 7
 
 	C_bg: NATURAL_32 = 0xE9ECF1
 	C_panel: NATURAL_32 = 0xFFFFFF
@@ -756,7 +1501,7 @@ feature {NONE} -- Geometry & palette
 	C_signal: NATURAL_32 = 0xAF3A22
 	C_signal_wash: NATURAL_32 = 0xF8E7E2
 
-feature {NONE} -- C Externals (window scaffolding)
+feature {NONE} -- C Externals
 
 	c_create_window (a_title: POINTER; a_w, a_h: INTEGER): POINTER
 		external
@@ -812,6 +1557,69 @@ feature {NONE} -- C Externals (window scaffolding)
 			"C inline use %"ocr_cairo_win.h%""
 		alias
 			"return (int)AddFontResourceExW((LPCWSTR)$a_path, FR_PRIVATE, 0);"
+		end
+
+	c_screen_x: INTEGER
+		external
+			"C inline use %"ocr_cairo_win.h%""
+		alias
+			"return ocw_screen_x();"
+		end
+
+	c_screen_y: INTEGER
+		external
+			"C inline use %"ocr_cairo_win.h%""
+		alias
+			"return ocw_screen_y();"
+		end
+
+	c_screen_w: INTEGER
+		external
+			"C inline use %"ocr_cairo_win.h%""
+		alias
+			"return ocw_screen_w();"
+		end
+
+	c_screen_h: INTEGER
+		external
+			"C inline use %"ocr_cairo_win.h%""
+		alias
+			"return ocw_screen_h();"
+		end
+
+	c_grab_screen (a_x, a_y, a_w, a_h: INTEGER; a_bits: POINTER; a_stride: INTEGER): INTEGER
+		external
+			"C inline use %"ocr_cairo_win.h%""
+		alias
+			"return ocw_grab_screen($a_x, $a_y, $a_w, $a_h, $a_bits, $a_stride);"
+		end
+
+	c_show_overlay: POINTER
+		external
+			"C inline use %"ocr_cairo_win.h%""
+		alias
+			"return ocw_show_overlay();"
+		end
+
+	c_hide_overlay
+		external
+			"C inline use %"ocr_cairo_win.h%""
+		alias
+			"ocw_hide_overlay();"
+		end
+
+	c_overlay_dc: POINTER
+		external
+			"C inline use %"ocr_cairo_win.h%""
+		alias
+			"return ocw_overlay_dc();"
+		end
+
+	c_overlay_release (a_dc: POINTER)
+		external
+			"C inline use %"ocr_cairo_win.h%""
+		alias
+			"ocw_overlay_release($a_dc);"
 		end
 
 end

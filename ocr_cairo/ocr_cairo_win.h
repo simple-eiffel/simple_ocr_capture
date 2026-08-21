@@ -1,11 +1,8 @@
-/* ocr_cairo_win.h - pure Win32 window scaffolding for the M3 cairo face.
-   Same pattern proven by simple_cairo's spike_gui: RegisterClass +
-   CreateWindowExW + a blocking message pump, input forwarded to Eiffel
-   through a small event queue. Single-window by design.
-
-   The system-wide hotkey needs nothing here: OCR_HOTKEY owns a
-   message-only window and is POLLED (taken_presses) from the timer tick,
-   exactly as the classic GUI polls it. */
+/* ocr_cairo_win.h - pure Win32 scaffolding for the cairo face.
+   v2: adds keyboard input, a frozen-desktop drag overlay (the pure-route
+   replacement for the Vision2 region picker) and a screen grabber that
+   BitBlts straight into a caller-supplied cairo ARGB32 buffer (the
+   pure-route replacement for EV_SCREEN.sub_pixmap). */
 
 #ifndef OCR_CAIRO_WIN_H
 #define OCR_CAIRO_WIN_H
@@ -14,9 +11,11 @@
 #pragma comment(lib, "shell32.lib")
 
 /* Event queue: [type, a, b, c] per slot.
-   type 0 none | 2 lbutton_down(x,y) | 6 expose | 7 timer_tick */
-#define OCW_QCAP 512
+   main window:  2 lbutton(x,y) | 3 char(code) | 4 keydown(vk) | 6 expose | 7 tick
+   overlay:     12 move(x,y)   | 13 down(x,y) | 14 up(x,y)    | 15 cancel | 16 expose */
+#define OCW_QCAP 1024
 static HWND s_ocw_hwnd = 0;
+static HWND s_ocw_overlay = 0;
 static int  s_ocw_q[OCW_QCAP][4];
 static int  s_ocw_qhead = 0, s_ocw_qtail = 0;
 
@@ -33,7 +32,15 @@ static void ocw_push(int t, int a, int b, int c) {
 static LRESULT CALLBACK ocw_wndproc(HWND h, UINT m, WPARAM w, LPARAM l) {
     switch (m) {
         case WM_LBUTTONDOWN:
+            SetFocus(h);
             ocw_push(2, (int)(short)LOWORD(l), (int)(short)HIWORD(l), 0);
+            return 0;
+        case WM_CHAR:
+            ocw_push(3, (int)w, 0, 0);
+            return 0;
+        case WM_KEYDOWN:
+            if (w == VK_LEFT || w == VK_RIGHT || w == VK_HOME || w == VK_END || w == VK_DELETE)
+                ocw_push(4, (int)w, 0, 0);
             return 0;
         case WM_TIMER:
             ocw_push(7, 0, 0, 0);
@@ -51,6 +58,38 @@ static LRESULT CALLBACK ocw_wndproc(HWND h, UINT m, WPARAM w, LPARAM l) {
             KillTimer(h, 1);
             PostQuitMessage(0);
             return 0;
+    }
+    return DefWindowProcW(h, m, w, l);
+}
+
+static LRESULT CALLBACK ocw_overlay_proc(HWND h, UINT m, WPARAM w, LPARAM l) {
+    switch (m) {
+        case WM_MOUSEMOVE:
+            ocw_push(12, (int)(short)LOWORD(l), (int)(short)HIWORD(l), 0);
+            return 0;
+        case WM_LBUTTONDOWN:
+            SetCapture(h);
+            ocw_push(13, (int)(short)LOWORD(l), (int)(short)HIWORD(l), 0);
+            return 0;
+        case WM_LBUTTONUP:
+            ReleaseCapture();
+            ocw_push(14, (int)(short)LOWORD(l), (int)(short)HIWORD(l), 0);
+            return 0;
+        case WM_KEYDOWN:
+            if (w == VK_ESCAPE) ocw_push(15, 0, 0, 0);
+            return 0;
+        case WM_RBUTTONDOWN:
+            ocw_push(15, 0, 0, 0);
+            return 0;
+        case WM_PAINT: {
+            PAINTSTRUCT ps;
+            BeginPaint(h, &ps);
+            EndPaint(h, &ps);
+            ocw_push(16, 0, 0, 0);
+            return 0;
+        }
+        case WM_ERASEBKGND:
+            return 1;
     }
     return DefWindowProcW(h, m, w, l);
 }
@@ -76,7 +115,7 @@ static void* ocw_create_window(const wchar_t* title, int cw, int ch) {
     if (h) {
         ShowWindow(h, SW_SHOW);
         UpdateWindow(h);
-        SetTimer(h, 1, 500, 0); /* the product's own poll cadence family */
+        SetTimer(h, 1, 500, 0);
     }
     return (void*)h;
 }
@@ -110,9 +149,84 @@ static double ocw_now_ms(void) {
     return (double)c.QuadPart * 1000.0 / (double)f.QuadPart;
 }
 
-/* Open a file with its associated application (the product's text file). */
 static int ocw_shell_open(const wchar_t* path) {
     return (int)(INT_PTR)ShellExecuteW(0, L"open", path, 0, 0, SW_SHOWNORMAL) > 32 ? 1 : 0;
 }
+
+/* ---- screen metrics (virtual desktop) ---- */
+static int ocw_screen_x(void) { return GetSystemMetrics(SM_XVIRTUALSCREEN); }
+static int ocw_screen_y(void) { return GetSystemMetrics(SM_YVIRTUALSCREEN); }
+static int ocw_screen_w(void) { return GetSystemMetrics(SM_CXVIRTUALSCREEN); }
+static int ocw_screen_h(void) { return GetSystemMetrics(SM_CYVIRTUALSCREEN); }
+
+/* ---- pure screen grab: BitBlt the desktop region into a caller-supplied
+   cairo ARGB32 buffer (bits/stride), alpha forced opaque. Replaces
+   EV_SCREEN.sub_pixmap on the pure route. Returns 1 on success. ---- */
+static int ocw_grab_screen(int x, int y, int w, int h, void* bits, int stride) {
+    HDC screen, mem;
+    HBITMAP dib, old;
+    BITMAPINFO bi;
+    void* dib_bits = 0;
+    int row, col, ok = 0;
+    if (!bits || w <= 0 || h <= 0) return 0;
+    screen = GetDC(0);
+    if (!screen) return 0;
+    mem = CreateCompatibleDC(screen);
+    ZeroMemory(&bi, sizeof(bi));
+    bi.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
+    bi.bmiHeader.biWidth = w;
+    bi.bmiHeader.biHeight = -h;               /* top-down */
+    bi.bmiHeader.biPlanes = 1;
+    bi.bmiHeader.biBitCount = 32;
+    bi.bmiHeader.biCompression = BI_RGB;
+    dib = CreateDIBSection(mem, &bi, DIB_RGB_COLORS, &dib_bits, 0, 0);
+    if (dib && dib_bits) {
+        old = (HBITMAP)SelectObject(mem, dib);
+        if (BitBlt(mem, 0, 0, w, h, screen, x, y, SRCCOPY | CAPTUREBLT)) {
+            for (row = 0; row < h; row++) {
+                unsigned int* src = (unsigned int*)((char*)dib_bits + (size_t)row * w * 4);
+                unsigned int* dst = (unsigned int*)((char*)bits + (size_t)row * stride);
+                for (col = 0; col < w; col++)
+                    dst[col] = src[col] | 0xFF000000u;   /* opaque alpha */
+            }
+            ok = 1;
+        }
+        SelectObject(mem, old);
+        DeleteObject(dib);
+    }
+    DeleteDC(mem);
+    ReleaseDC(0, screen);
+    return ok;
+}
+
+/* ---- frozen-desktop drag overlay ---- */
+static void* ocw_show_overlay(void) {
+    WNDCLASSW wc;
+    int vx = ocw_screen_x(), vy = ocw_screen_y();
+    int vw = ocw_screen_w(), vh = ocw_screen_h();
+    if (!s_ocw_overlay) {
+        ZeroMemory(&wc, sizeof(wc));
+        wc.lpfnWndProc = ocw_overlay_proc;
+        wc.hInstance = GetModuleHandleW(0);
+        wc.hCursor = LoadCursorW(0, (LPCWSTR)IDC_CROSS);
+        wc.lpszClassName = L"OcrCairoOverlay";
+        RegisterClassW(&wc);
+        s_ocw_overlay = CreateWindowExW(WS_EX_TOPMOST, L"OcrCairoOverlay", L"",
+            WS_POPUP, vx, vy, vw, vh, 0, 0, GetModuleHandleW(0), 0);
+    }
+    if (s_ocw_overlay) {
+        SetWindowPos(s_ocw_overlay, HWND_TOPMOST, vx, vy, vw, vh, SWP_SHOWWINDOW);
+        SetForegroundWindow(s_ocw_overlay);
+        SetFocus(s_ocw_overlay);
+    }
+    return (void*)s_ocw_overlay;
+}
+
+static void ocw_hide_overlay(void) {
+    if (s_ocw_overlay) ShowWindow(s_ocw_overlay, SW_HIDE);
+}
+
+static void* ocw_overlay_dc(void)         { return s_ocw_overlay ? (void*)GetDC(s_ocw_overlay) : 0; }
+static void  ocw_overlay_release(void* dc){ if (s_ocw_overlay && dc) ReleaseDC(s_ocw_overlay, (HDC)dc); }
 
 #endif /* OCR_CAIRO_WIN_H */
