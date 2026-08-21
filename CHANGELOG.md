@@ -7,6 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.8.0] - 2026-08-21
+
+The cairo face becomes the product.
+
+### Added
+
+- New GUI built on simple_cairo and pure Win32 - no Vision2, no GTK. Full
+  parity with the classic window plus the floating status strip: live page
+  position, rate, ETA, finish time, six-dot health trail, transport controls.
+- Page-indicator OCR via Windows.Media.Ocr (`winocr_label.ps1`, run by the
+  inbox Windows PowerShell 5.1): the five-word label reads in ~0.3 s instead
+  of seconds through the 7B model, taking the label leg off the critical
+  path. Falls back to the model worker when the script is absent.
+- The exe is its own OCR worker: headless flags dispatch past the GUI into
+  the classic CLI, so the installed binary spawns itself for `--worker` and
+  `--label-worker`. The installer now ships exe + cairo.dll + winocr_label.ps1.
+- Session log (`ocr_cairo_session.log`) replaces console prints; label reads
+  and harvests are logged per page; worker failure reasons reach the strip.
+
+### Fixed
+
+- Run engine now mirrors the classic harvest: sidecar collection,
+  `[OCR FAILED]` refusal, byte-identical retry skip, capture headers, and a
+  per-page settings store so `capture_index` survives relaunches.
+- End-of-book detection requires two consecutive unchanged re-grabs, one
+  settle period apart - a slow page render no longer ends the run early.
+
 ## [1.7.0] - 2026-08-20
 
 ### Added

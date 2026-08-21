@@ -1,11 +1,15 @@
 ; ============================================================================
 ;  Simple OCR Capture - Inno Setup script
 ;
-;  Ships ONE file. The finalized Eiffel binary links everything statically and
-;  imports only Windows system DLLs (WS2_32, WINHTTP, KERNEL32, USER32, GDI32,
-;  SHELL32, ole32, COMCTL32, SHLWAPI), so there is no redistributable to carry
-;  - no libcurl, no VC++ runtime. That is why the app talks to Ollama over
-;  WinHTTP instead of through simple_http/libcurl.
+;  Ships THREE files: the finalized Eiffel binary (statically linked, only
+;  Windows system DLLs imported - no VC++ runtime, no libcurl; Ollama is
+;  reached over WinHTTP), cairo.dll (the 2D engine behind the new pure-Win32
+;  face - no Vision2, no GTK), and winocr_label.ps1 (the page-indicator read
+;  via Windows.Media.Ocr, run by the inbox Windows PowerShell 5.1; if the
+;  script is missing the app falls back to reading labels with the model).
+;
+;  The exe is its own OCR worker: the run engine spawns this same binary
+;  with --worker, which dispatches past the GUI into the CLI.
 ;
 ;  The 9.5 GB OCR model is deliberately NOT bundled. The application checks for
 ;  it at startup and offers to pull it, which keeps this installer small and
@@ -15,10 +19,10 @@
 ; ============================================================================
 
 #define AppName        "Simple OCR Capture"
-#define AppVersion     "1.7.0"
+#define AppVersion     "1.8.0"
 #define AppPublisher   "Larry Rix"
 #define AppExeName     "simple_ocr_capture.exe"
-#define SourceExe      "..\EIFGENs\ocr_capture\F_code\simple_ocr_capture.exe"
+#define SourceExe      "..\EIFGENs\ocr_cairo_gui\F_code\simple_ocr_capture.exe"
 
 [Setup]
 AppId={{9F2C4A31-7D58-4E60-B1A7-3C6E24D9B085}
@@ -53,6 +57,8 @@ Name: "desktopicon"; Description: "Create a &desktop shortcut"; GroupDescription
 
 [Files]
 Source: "{#SourceExe}"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\EIFGENs\ocr_cairo_gui\F_code\cairo.dll"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\ocr_cairo\winocr_label.ps1"; DestDir: "{app}"; Flags: ignoreversion
 Source: "README.txt";   DestDir: "{app}"; Flags: ignoreversion isreadme
 
 [Icons]

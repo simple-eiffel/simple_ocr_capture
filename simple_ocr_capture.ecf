@@ -70,7 +70,7 @@
 	</target>
 
 	<target name="ocr_cairo_gui" extends="simple_ocr_capture">
-		<root class="OCR_CAIRO_GUI" feature="make"/>
+		<root class="OCR_CAIRO_APP" feature="make"/>
 		<setting name="console_application" value="false"/>
 		<library name="simple_cairo" location="$SIMPLE_EIFFEL/simple_cairo/simple_cairo.ecf"/>
 		<external_include location="$(SIMPLE_EIFFEL)/simple_ocr_capture/ocr_cairo"/>

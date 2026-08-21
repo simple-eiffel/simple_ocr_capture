@@ -203,13 +203,30 @@ feature {NONE} -- Product machinery
 			f: RAW_FILE
 			candidates: ARRAY [STRING_32]
 			i: INTEGER
+			args: ARGUMENTS_32
+			self_dir: STRING_32
 		do
+			create args
+				-- self first: since OCR_CAIRO_APP dispatches headless flags,
+				-- this exe IS the worker - installed machines have no other
 			candidates := <<
+				args.command_name.to_string_32,
 				{STRING_32} "D:\prod\simple_ocr_capture\EIFGENs\ocr_capture\F_code\simple_ocr_capture.exe",
 				{STRING_32} "C:\Program Files\Simple OCR Capture\simple_ocr_capture.exe">>
-			winocr_script := {STRING_32} "D:\prod\simple_ocr_capture\ocr_cairo\winocr_label.ps1"
+			self_dir := args.command_name.to_string_32.twin
+			if self_dir.has ('\') then
+				self_dir.keep_head (self_dir.last_index_of ('\', self_dir.count))
+			else
+				self_dir.wipe_out
+			end
+			winocr_script := self_dir + {STRING_32} "winocr_label.ps1"
 			create f.make_with_name (winocr_script)
 			winocr_found := f.exists
+			if not winocr_found then
+				winocr_script := {STRING_32} "D:\prod\simple_ocr_capture\ocr_cairo\winocr_label.ps1"
+				create f.make_with_name (winocr_script)
+				winocr_found := f.exists
+			end
 			from
 				i := candidates.lower
 			until
