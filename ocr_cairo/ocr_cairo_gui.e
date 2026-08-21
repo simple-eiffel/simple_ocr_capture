@@ -278,6 +278,11 @@ feature {NONE} -- Run engine (the product cycle, pure)
 	cyc_working: BOOLEAN
 	cyc_settling: BOOLEAN
 
+	equal_strikes: INTEGER
+			-- Consecutive unchanged re-grabs; the book is only declared
+			-- finished on the second, so a slow page render is not
+			-- mistaken for the back cover.
+
 	grab_cur: detachable CAIRO_SURFACE
 	grab_prev: detachable CAIRO_SURFACE
 	worker_p: detachable SIMPLE_ASYNC_PROCESS
@@ -417,6 +422,7 @@ feature {NONE} -- Run engine (the product cycle, pure)
 			run_paused := False
 			cyc_working := False
 			cyc_settling := False
+			equal_strikes := 0
 			set_status (a_reason)
 		end
 
@@ -516,6 +522,8 @@ feature {NONE} -- Run engine (the product cycle, pure)
 						l.start (cmd)
 						if l.is_started then
 							label_p := l
+						else
+							log_line ({STRING_32} "label spawn FAILED: " + cmd)
 						end
 					end
 				end
@@ -538,7 +546,10 @@ feature {NONE} -- Run engine (the product cycle, pure)
 				f.close
 			end
 			Result.prune_all ('%R')
-			Result.prune_all ('%N')
+			if Result.has ('%N') then
+					-- first line only: the worker parks failure reasons on line 2
+				Result.keep_head (Result.index_of ('%N', 1) - 1)
+			end
 		end
 
 	engine_tick
@@ -547,11 +558,17 @@ feature {NONE} -- Run engine (the product cycle, pure)
 			n: detachable CAIRO_SURFACE
 		do
 			if attached label_p as l and then l.has_finished then
+				log_line ({STRING_32} "label worker exit " + l.exit_code.out)
 				l.close
 				label_p := Void
 				last_label := read_label_file
-				if not last_label.is_empty then
+				if last_label.is_empty then
+					log_line ({STRING_32} "label read: EMPTY")
+				else
+					log_line ({STRING_32} "label read: " + last_label)
 					page_position.set_from (last_label)
+					log_line ({STRING_32} "label parsed: pos " + page_position.position.out
+						+ " total " + page_position.total.out)
 				end
 			end
 			if cyc_working and then attached worker_p as w and then w.has_finished then
@@ -592,9 +609,19 @@ feature {NONE} -- Run engine (the product cycle, pure)
 					stop_run ({STRING_32} "screen grab failed %/8212/ run stopped")
 				elseif attached grab_cur as g and then surfaces_equal (g, n) then
 					n.destroy
-					stop_run ({STRING_32} "page stopped changing %/8212/ book finished after "
-						+ pages_done.out.to_string_32 + {STRING_32} " pages")
+					if equal_strikes = 0 then
+							-- one more settle period, then a second look:
+							-- a slow render must not read as end-of-book
+						equal_strikes := 1
+						cyc_settling := True
+						t_settle := c_now_ms
+						log_line ({STRING_32} "page unchanged %/8212/ waiting to confirm end")
+					else
+						stop_run ({STRING_32} "page stopped changing %/8212/ book finished after "
+							+ pages_done.out.to_string_32 + {STRING_32} " pages")
+					end
 				else
+					equal_strikes := 0
 					if attached grab_prev as gp then
 						gp.destroy
 					end
