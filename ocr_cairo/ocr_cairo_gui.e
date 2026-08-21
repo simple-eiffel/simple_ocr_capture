@@ -297,6 +297,16 @@ feature {NONE} -- Run engine (the product cycle, pure)
 			create Result.make_empty
 		end
 
+	last_appended_text: STRING
+		attribute
+			create Result.make_empty
+		end
+
+	last_harvest_error: STRING_32
+		attribute
+			create Result.make_empty
+		end
+
 	dots: ARRAYED_LIST [INTEGER]
 			-- Last outcomes: 1 ok, 2 failed.
 
@@ -427,8 +437,8 @@ feature {NONE} -- Run engine (the product cycle, pure)
 		end
 
 	kick_capture
-			-- Save the current grab, send it to the real worker (append
-			-- pipeline), and start the page-indicator read when configured.
+			-- Save the current grab, send it to the worker (which writes a
+			-- sidecar this engine harvests), and start the page-indicator read.
 		local
 			img: STRING_32
 			cmd: STRING_32
@@ -448,7 +458,7 @@ feature {NONE} -- Run engine (the product cycle, pure)
 					cmd.append_string_general ("%" --worker %"")
 					cmd.append (img)
 					cmd.append_string_general ("%" %"")
-					cmd.append (settings.text_file_path)
+					cmd.append (page_sidecar_path)
 					cmd.append_character ('%"')
 					create w.make
 					w.set_show_window (False)
@@ -467,6 +477,104 @@ feature {NONE} -- Run engine (the product cycle, pure)
 				else
 					stop_run ({STRING_32} "could not write " + img)
 				end
+			end
+		end
+
+	page_sidecar_path: STRING_32
+			-- Where the worker writes one capture's text before harvest.
+		do
+			Result := settings.output_folder.twin
+			Result.append_string_general ("\ocr_page_sidecar.txt")
+		end
+
+	harvest_page: BOOLEAN
+			-- Mirror of the classic cycle's harvest: collect the sidecar,
+			-- refuse failures, skip byte-identical retry captures, append
+			-- to the master. False stops the run via `last_harvest_error'.
+		local
+			raw: STRING
+			f: RAW_FILE
+		do
+			raw := read_raw_of (page_sidecar_path)
+			if raw.is_empty then
+				last_harvest_error := {STRING_32} "OCR worker produced no output file"
+			elseif raw.starts_with ("[OCR FAILED]") then
+				last_harvest_error := raw.to_string_32
+			elseif raw.same_string (last_appended_text) then
+					-- the end-of-book confirmation photographs the last page
+					-- again; the retry is kept as an image, its text is not
+				log_line ({STRING_32} "identical to the previous page %/8212/ not appended (retry capture)")
+				Result := True
+			elseif append_to_book (raw) then
+				last_appended_text := raw.twin
+				log_line ({STRING_32} "appended " + raw.count.out + " bytes to book")
+					-- the bumped capture_index must survive a relaunch, or the
+					-- next session's fallback-named captures overwrite this one's
+				settings.store
+				Result := True
+			else
+				last_harvest_error := {STRING_32} "could not write to " + settings.text_file_path
+			end
+			create f.make_with_name (page_sidecar_path)
+			if f.exists then
+				f.delete
+			end
+		end
+
+	append_to_book (a_raw: STRING): BOOLEAN
+			-- Classic append_to_master: optional separator header, the raw
+			-- UTF-8 bytes, a guaranteed trailing newline and a blank line.
+		local
+			f: RAW_FILE
+			sep: STRING_32
+			tm: DATE_TIME
+		do
+			create f.make_with_name (settings.text_file_path)
+			if f.exists then
+				f.open_append
+			else
+				f.create_read_write
+			end
+			if f.is_open_write then
+				if settings.add_separators then
+					create tm.make_now
+					create sep.make (80)
+					sep.append_string_general ("----- capture ")
+					sep.append_string_general (settings.capture_index.out)
+					if not last_label.is_empty then
+						sep.append_string_general ("  [page ")
+						sep.append (last_label)
+						sep.append_character (']')
+					end
+					sep.append_string_general ("  ")
+					sep.append_string_general (tm.out)
+					sep.append_string_general (" -----%N")
+					f.put_string ({UTF_CONVERTER}.utf_32_string_to_utf_8_string_8 (sep))
+				end
+				f.put_string (a_raw)
+				if not a_raw.is_empty and then a_raw.item (a_raw.count) /= '%N' then
+					f.put_string ("%N")
+				end
+				f.put_string ("%N")
+				f.close
+				Result := True
+			end
+		end
+
+	read_raw_of (a_path: STRING_32): STRING
+			-- Whole file as raw bytes; empty when absent or unreadable.
+		local
+			f: RAW_FILE
+		do
+			create Result.make_empty
+			create f.make_with_name (a_path)
+			if f.exists and then f.is_readable then
+				f.open_read
+				if f.count > 0 then
+					f.read_stream (f.count)
+					Result := f.last_string.twin
+				end
+				f.close
 			end
 		end
 
@@ -578,13 +686,21 @@ feature {NONE} -- Run engine (the product cycle, pure)
 				cyc_working := False
 				last_shot_ms := c_now_ms - t_page_start
 				if ok then
+					ok := harvest_page
+					if not ok then
+						set_error (last_harvest_error)
+					end
+				else
+					last_harvest_error := {STRING_32} "OCR worker failed"
+				end
+				if ok then
 					pages_done := pages_done + 1
 					push_dot (1)
 				else
 					push_dot (2)
 				end
 				if not ok then
-					stop_run ({STRING_32} "OCR worker failed %/8212/ run stopped")
+					stop_run (last_harvest_error + {STRING_32} " %/8212/ run stopped")
 				elseif run_mode = Run_single then
 					run_mode := Run_idle
 					set_status ({STRING_32} "captured and appended in " + ms_str (last_shot_ms)
