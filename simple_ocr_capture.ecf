@@ -69,4 +69,11 @@
 		<cluster name="spike" location=".\spike\"/>
 	</target>
 
+	<target name="ocr_cairo_gui" extends="simple_ocr_capture">
+		<root class="OCR_CAIRO_GUI" feature="make"/>
+		<setting name="console_application" value="true"/>
+		<library name="simple_cairo" location="$SIMPLE_EIFFEL/simple_cairo/simple_cairo.ecf"/>
+		<external_include location="$(SIMPLE_EIFFEL)/simple_ocr_capture/ocr_cairo"/>
+		<cluster name="ocr_cairo" location=".\ocr_cairo\" recursive="true"/>
+	</target>
 </system>
