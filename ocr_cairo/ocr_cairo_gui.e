@@ -74,6 +74,11 @@ feature {NONE} -- Initialization
 			create btn_rects.make (24)
 			create edit_buf.make_empty
 			set_status ({STRING_32} "loaded " + settings.settings_path)
+			if winocr_found then
+				log_line ({STRING_32} "label OCR: Windows OCR (fast path)")
+			else
+				log_line ({STRING_32} "label OCR: model worker (winocr_label.ps1 not found)")
+			end
 
 			offscreen := cairo.create_surface (Win_w, Win_h)
 			ctx := cairo.create_context (offscreen)
@@ -186,6 +191,13 @@ feature {NONE} -- Product machinery
 
 	exe_found: BOOLEAN
 
+	winocr_script: STRING_32
+		attribute
+			create Result.make_empty
+		end
+
+	winocr_found: BOOLEAN
+
 	resolve_worker_exe
 		local
 			f: RAW_FILE
@@ -195,6 +207,9 @@ feature {NONE} -- Product machinery
 			candidates := <<
 				{STRING_32} "D:\prod\simple_ocr_capture\EIFGENs\ocr_capture\F_code\simple_ocr_capture.exe",
 				{STRING_32} "C:\Program Files\Simple OCR Capture\simple_ocr_capture.exe">>
+			winocr_script := {STRING_32} "D:\prod\simple_ocr_capture\ocr_cairo\winocr_label.ps1"
+			create f.make_with_name (winocr_script)
+			winocr_found := f.exists
 			from
 				i := candidates.lower
 			until
@@ -475,14 +490,27 @@ feature {NONE} -- Run engine (the product cycle, pure)
 				then
 					s.mark_dirty.do_nothing
 					if s.write_png (label_img_path) then
-						create cmd.make (160)
-						cmd.append_character ('%"')
-						cmd.append (worker_exe)
-						cmd.append_string_general ("%" --label-worker %"")
-						cmd.append (label_img_path)
-						cmd.append_string_general ("%" %"")
-						cmd.append (label_txt_path)
-						cmd.append_character ('%"')
+						create cmd.make (200)
+						if winocr_found then
+								-- Windows OCR: ~0.3 s for a five-word label vs
+								-- seconds for the 7B model. Cannon retired;
+								-- flyswatter deployed.
+							cmd.append_string_general ("powershell.exe -NoProfile -ExecutionPolicy Bypass -File %"")
+							cmd.append (winocr_script)
+							cmd.append_string_general ("%" %"")
+							cmd.append (label_img_path)
+							cmd.append_string_general ("%" %"")
+							cmd.append (label_txt_path)
+							cmd.append_character ('%"')
+						else
+							cmd.append_character ('%"')
+							cmd.append (worker_exe)
+							cmd.append_string_general ("%" --label-worker %"")
+							cmd.append (label_img_path)
+							cmd.append_string_general ("%" %"")
+							cmd.append (label_txt_path)
+							cmd.append_character ('%"')
+						end
 						create l.make
 						l.set_show_window (False)
 						l.start (cmd)
