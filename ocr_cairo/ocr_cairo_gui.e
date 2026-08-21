@@ -83,9 +83,9 @@ feature {NONE} -- Initialization
 			create ns.make (window_title)
 			hwnd := c_create_window (ns.item, Win_w, Win_h)
 			if hwnd = default_pointer then
-				print ("FAILED to create window%N")
+				log_line ({STRING_32} "FAILED to create window")
 			else
-				print ("Simple OCR Capture (cairo face, parity) up.%N")
+				log_line ({STRING_32} "cairo face up")
 				if settings.show_strip then
 					show_strip_win
 				end
@@ -112,7 +112,7 @@ feature {NONE} -- Initialization
 							if not first_png then
 								first_png := True
 								if offscreen.write_png ("ocr_cairo_first_frame.png") then
-									print ("First frame written to ocr_cairo_first_frame.png%N")
+									log_line ({STRING_32} "first frame written")
 								end
 							end
 						end
@@ -165,7 +165,7 @@ feature {NONE} -- Initialization
 			end
 			ctx.destroy
 			offscreen.destroy
-			print ("cairo face closed.%N")
+			log_line ({STRING_32} "session closed")
 		end
 
 feature {NONE} -- Product machinery
@@ -222,14 +222,34 @@ feature {NONE} -- Status line (mirrored to stdout)
 		do
 			status_msg := a_s
 			status_is_error := False
-			print ({STRING_32} "%/183/ " + a_s + {STRING_32} "%N")
+			log_line (a_s)
 		end
 
 	set_error (a_s: STRING_32)
 		do
 			status_msg := a_s
 			status_is_error := True
-			print ({STRING_32} "! " + a_s + {STRING_32} "%N")
+			log_line ({STRING_32} "! " + a_s)
+		end
+
+	log_line (a_s: STRING_32)
+			-- Append to the session log. NEVER print: in a GUI-subsystem
+			-- Eiffel program the runtime allocates a console on the first
+			-- console write - that was Larry's mystery DOS window.
+		local
+			f: PLAIN_TEXT_FILE
+		do
+			create f.make_with_name ("ocr_cairo_session.log")
+			if f.exists then
+				f.open_append
+			else
+				f.open_write
+			end
+			if f.is_open_write then
+				f.put_string (a_s.to_string_8)
+				f.put_new_line
+				f.close
+			end
 		end
 
 feature {NONE} -- Run engine (the product cycle, pure)
