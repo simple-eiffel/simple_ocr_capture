@@ -229,4 +229,76 @@ static void ocw_hide_overlay(void) {
 static void* ocw_overlay_dc(void)         { return s_ocw_overlay ? (void*)GetDC(s_ocw_overlay) : 0; }
 static void  ocw_overlay_release(void* dc){ if (s_ocw_overlay && dc) ReleaseDC(s_ocw_overlay, (HDC)dc); }
 
+/* ---- status strip: second topmost tool window ----
+   events: 21 strip_lbutton(x,y) | 22 strip_moved(x,y) | 23 strip_expose */
+static HWND s_ocw_strip = 0;
+
+static LRESULT CALLBACK ocw_strip_proc(HWND h, UINT m, WPARAM w, LPARAM l) {
+    switch (m) {
+        case WM_LBUTTONDOWN: {
+            int x = (int)(short)LOWORD(l), y = (int)(short)HIWORD(l);
+            ocw_push(21, x, y, 0);
+            /* drag anywhere except the transport corner (right 90px, top 26px) */
+            if (!(y < 26 && x > 0)) { }
+            if (y >= 26 || x < 1) {
+                ReleaseCapture();
+                SendMessageW(h, WM_NCLBUTTONDOWN, HTCAPTION, 0);
+            }
+            return 0;
+        }
+        case WM_EXITSIZEMOVE: {
+            RECT r;
+            GetWindowRect(h, &r);
+            ocw_push(22, r.left, r.top, 0);
+            return 0;
+        }
+        case WM_PAINT: {
+            PAINTSTRUCT ps;
+            BeginPaint(h, &ps);
+            EndPaint(h, &ps);
+            ocw_push(23, 0, 0, 0);
+            return 0;
+        }
+        case WM_ERASEBKGND:
+            return 1;
+    }
+    return DefWindowProcW(h, m, w, l);
+}
+
+static void* ocw_show_strip(int x, int y, int w, int h) {
+    WNDCLASSW wc;
+    if (!s_ocw_strip) {
+        ZeroMemory(&wc, sizeof(wc));
+        wc.lpfnWndProc = ocw_strip_proc;
+        wc.hInstance = GetModuleHandleW(0);
+        wc.hCursor = LoadCursorW(0, (LPCWSTR)IDC_ARROW);
+        wc.lpszClassName = L"OcrCairoStrip";
+        RegisterClassW(&wc);
+        s_ocw_strip = CreateWindowExW(WS_EX_TOPMOST | WS_EX_TOOLWINDOW,
+            L"OcrCairoStrip", L"", WS_POPUP, x, y, w, h,
+            0, 0, GetModuleHandleW(0), 0);
+    }
+    if (s_ocw_strip)
+        SetWindowPos(s_ocw_strip, HWND_TOPMOST, x, y, w, h, SWP_SHOWWINDOW | SWP_NOACTIVATE);
+    return (void*)s_ocw_strip;
+}
+
+static void ocw_hide_strip(void) {
+    if (s_ocw_strip) ShowWindow(s_ocw_strip, SW_HIDE);
+}
+
+static void* ocw_strip_dc(void)          { return s_ocw_strip ? (void*)GetDC(s_ocw_strip) : 0; }
+static void  ocw_strip_release(void* dc) { if (s_ocw_strip && dc) ReleaseDC(s_ocw_strip, (HDC)dc); }
+
+/* ---- helpers for the run engine ---- */
+static int ocw_buffers_equal(const void* a, const void* b, int len) {
+    return (a && b && len > 0 && memcmp(a, b, (size_t)len) == 0) ? 1 : 0;
+}
+
+static int ocw_minutes_of_day(void) {
+    SYSTEMTIME st;
+    GetLocalTime(&st);
+    return (int)st.wHour * 60 + (int)st.wMinute;
+}
+
 #endif /* OCR_CAIRO_WIN_H */

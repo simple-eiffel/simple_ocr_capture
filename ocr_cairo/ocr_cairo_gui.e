@@ -63,6 +63,10 @@ feature {NONE} -- Initialization
 			create hotkey.make
 			hotkey_ok := hotkey.register (settings.hotkey_modifiers, settings.hotkey_key)
 			resolve_worker_exe
+			create page_position
+			create clicker.make
+			create namer
+			create dots.make (6)
 
 			create findings_lines.make (16)
 			create field_rects.make (24)
@@ -82,6 +86,9 @@ feature {NONE} -- Initialization
 				print ("FAILED to create window%N")
 			else
 				print ("Simple OCR Capture (cairo face, parity) up.%N")
+				if settings.show_strip then
+					show_strip_win
+				end
 				from
 				until
 					done
@@ -134,13 +141,23 @@ feature {NONE} -- Initialization
 				on_overlay_up (a_a, a_b)
 			elseif a_ev = 15 then
 				cancel_overlay
+			elseif a_ev = 21 then
+				on_strip_click (a_a, a_b)
+			elseif a_ev = 22 then
+				on_strip_moved (a_a, a_b)
+			elseif a_ev = 23 then
+				blit_strip
 			end
 		end
 
 	shutdown
 		do
 			hotkey.cleanup
-			if attached shot_process as p then
+			hide_strip_win
+			if attached worker_p as p then
+				p.close
+			end
+			if attached label_p as p then
 				p.close
 			end
 			if attached pull_process as p then
@@ -215,88 +232,608 @@ feature {NONE} -- Status line (mirrored to stdout)
 			print ({STRING_32} "! " + a_s + {STRING_32} "%N")
 		end
 
-feature {NONE} -- Capture cycle (real pipeline)
+feature {NONE} -- Run engine (the product cycle, pure)
 
-	shot_process: detachable SIMPLE_ASYNC_PROCESS
-	shot_t0: REAL_64
-	last_shot_ms: REAL_64
-	shots_done: INTEGER
+	Run_idle: INTEGER = 0
+	Run_single: INTEGER = 1
+	Run_auto: INTEGER = 2
 
-	is_shooting: BOOLEAN
-		do
-			Result := attached shot_process as p and then not p.has_finished
+	run_mode: INTEGER
+	run_paused: BOOLEAN
+	cyc_working: BOOLEAN
+	cyc_settling: BOOLEAN
+
+	grab_cur: detachable CAIRO_SURFACE
+	grab_prev: detachable CAIRO_SURFACE
+	worker_p: detachable SIMPLE_ASYNC_PROCESS
+	label_p: detachable SIMPLE_ASYNC_PROCESS
+
+	page_position: OCR_PAGE_POSITION
+	clicker: OCR_CLICKER
+	namer: OCR_IMAGE_NAME
+
+	last_label: STRING_32
+		attribute
+			create Result.make_empty
 		end
 
-	start_shot (a_source: STRING_32)
-		local
-			p: SIMPLE_ASYNC_PROCESS
-			cmd: STRING_32
+	dots: ARRAYED_LIST [INTEGER]
+			-- Last outcomes: 1 ok, 2 failed.
+
+	pages_done: INTEGER
+	shots_done: INTEGER
+	t_settle: REAL_64
+	t_run_start: REAL_64
+	last_shot_ms: REAL_64
+	t_page_start: REAL_64
+
+	is_engine_busy: BOOLEAN
 		do
-			if is_shooting then
-				set_status ({STRING_32} "capture ignored %/8212/ one is already running")
+			Result := run_mode /= Run_idle
+		end
+
+	state_word: STRING_32
+		do
+			if run_mode = Run_idle then
+				Result := {STRING_32} "READY"
+			elseif run_paused then
+				Result := {STRING_32} "PAUSED"
+			elseif cyc_working then
+				Result := {STRING_32} "READING"
+			elseif cyc_settling then
+				Result := {STRING_32} "TURNING"
+			else
+				Result := {STRING_32} "RUNNING"
+			end
+		end
+
+	grab_region_surface: detachable CAIRO_SURFACE
+			-- Fresh grab of the capture region, or Void on failure.
+		local
+			s: CAIRO_SURFACE
+		do
+			s := cairo.create_surface (settings.region_width, settings.region_height)
+			if c_grab_screen (settings.region_x, settings.region_y,
+				settings.region_width, settings.region_height, s.data, s.stride) = 1
+			then
+				s.mark_dirty.do_nothing
+				Result := s
+			else
+				s.destroy
+			end
+		end
+
+	begin_single
+		do
+			if is_engine_busy then
+				set_status ({STRING_32} "busy %/8212/ a capture cycle is already running")
 			elseif not exe_found then
 				set_error ({STRING_32} "cannot capture: worker exe not found")
 			elseif not settings.is_region_valid then
 				set_error ({STRING_32} "cannot capture: region not set")
 			else
-				create cmd.make (128)
-				cmd.append_character ('"')
-				cmd.append (worker_exe)
-				cmd.append_string_general ("%" --shot ")
-				cmd.append_string_general (settings.region_x.out)
-				cmd.append_character (' ')
-				cmd.append_string_general (settings.region_y.out)
-				cmd.append_character (' ')
-				cmd.append_string_general (settings.region_width.out)
-				cmd.append_character (' ')
-				cmd.append_string_general (settings.region_height.out)
-				create p.make
-				p.set_show_window (False)
-				p.start (cmd)
-				if p.is_started then
-					shot_process := p
-					shot_t0 := c_now_ms
-					set_status ({STRING_32} "capturing (" + a_source + {STRING_32} ") %/8230/")
+				grab_cur := grab_region_surface
+				if grab_cur = Void then
+					set_error ({STRING_32} "screen grab failed")
 				else
-					set_error ({STRING_32} "worker failed to start")
+					run_mode := Run_single
+					kick_capture
 				end
 			end
 		end
 
-	poll_shot
-		local
-			lines: LIST [STRING_32]
-			shown: INTEGER
+	start_run
 		do
-			if attached shot_process as p and then p.has_finished then
-				last_shot_ms := c_now_ms - shot_t0
-				shots_done := shots_done + 1
-				lines := p.accumulated_output.split ('%N')
-				print ("---- shot output ----%N")
-				across lines as l loop
-					l.prune_all ('%R')
-					print (l)
-					print ("%N")
+			if is_engine_busy then
+				set_status ({STRING_32} "already running")
+			elseif not exe_found then
+				set_error ({STRING_32} "cannot start: worker exe not found")
+			elseif not settings.is_region_valid then
+				set_error ({STRING_32} "cannot start: capture region not set")
+			elseif not settings.is_advance_region_valid then
+				set_error ({STRING_32} "cannot start: advance button not set %/8212/ drag it in Auto-advance")
+			else
+				grab_cur := grab_region_surface
+				if grab_cur = Void then
+					set_error ({STRING_32} "screen grab failed")
+				else
+					run_mode := Run_auto
+					run_paused := False
+					pages_done := 0
+					dots.wipe_out
+					t_run_start := c_now_ms
+					if not strip_visible then
+						show_strip_win
+					end
+					set_status ({STRING_32} "auto-run started %/8212/ watch the strip; Pause or Stop any time")
+					kick_capture
 				end
-				print ("---------------------%N")
-				findings_lines.wipe_out
-				findings_source := {STRING_32} "LAST CAPTURE (--shot output)"
-				shown := 0
-				across lines as l loop
-					l.right_adjust
-					if not l.is_empty and shown < Findings_visible then
-						findings_lines.extend (l.twin)
-						shown := shown + 1
+			end
+		end
+
+	pause_resume
+		do
+			if run_mode = Run_auto then
+				run_paused := not run_paused
+				if run_paused then
+					set_status ({STRING_32} "paused %/8212/ finishing the page in flight, then holding")
+				else
+					set_status ({STRING_32} "resumed")
+					if cyc_settling then
+						t_settle := c_now_ms
 					end
 				end
-				if p.exit_code = 0 then
-					set_status ({STRING_32} "capture done in " + ms_str (last_shot_ms)
-						+ {STRING_32} " ms %/8212/ output below and on the console")
+			else
+				set_status ({STRING_32} "nothing to pause %/8212/ start a run first")
+			end
+		end
+
+	stop_run (a_reason: STRING_32)
+		do
+			if attached worker_p as w then
+				w.close
+			end
+			worker_p := Void
+			if attached label_p as l then
+				l.close
+			end
+			label_p := Void
+			run_mode := Run_idle
+			run_paused := False
+			cyc_working := False
+			cyc_settling := False
+			set_status (a_reason)
+		end
+
+	kick_capture
+			-- Save the current grab, send it to the real worker (append
+			-- pipeline), and start the page-indicator read when configured.
+		local
+			img: STRING_32
+			cmd: STRING_32
+			w: SIMPLE_ASYNC_PROCESS
+		do
+			if attached grab_cur as g then
+				t_page_start := c_now_ms
+				img := settings.output_folder.twin
+				img.append_character ('\')
+				img.append (namer.stem (last_label, settings.capture_index))
+				img.append_string_general (".png")
+				settings.bump_capture_index
+				if g.write_png (img) then
+					create cmd.make (160)
+					cmd.append_character ('%"')
+					cmd.append (worker_exe)
+					cmd.append_string_general ("%" --worker %"")
+					cmd.append (img)
+					cmd.append_string_general ("%" %"")
+					cmd.append (settings.text_file_path)
+					cmd.append_character ('%"')
+					create w.make
+					w.set_show_window (False)
+					w.start (cmd)
+					if w.is_started then
+						worker_p := w
+						cyc_working := True
+						cyc_settling := False
+						shots_done := shots_done + 1
+						set_status ({STRING_32} "page " + (pages_done + 1).out.to_string_32
+							+ {STRING_32} ": OCR in flight %/8230/")
+						start_label_read
+					else
+						stop_run ({STRING_32} "worker failed to start")
+					end
 				else
-					set_error ({STRING_32} "capture exited with code " + p.exit_code.out.to_string_32)
+					stop_run ({STRING_32} "could not write " + img)
 				end
-				p.close
-				shot_process := Void
+			end
+		end
+
+	label_img_path: STRING_32
+		do
+			Result := settings.output_folder.twin
+			Result.append_string_general ("\\ocr_label_probe.png")
+		end
+
+	label_txt_path: STRING_32
+		do
+			Result := settings.output_folder.twin
+			Result.append_string_general ("\\ocr_label_probe.txt")
+		end
+
+	start_label_read
+			-- Grab the page-indicator region and OCR it via the label worker.
+		local
+			s: CAIRO_SURFACE
+			cmd: STRING_32
+			l: SIMPLE_ASYNC_PROCESS
+		do
+			if settings.is_page_label_region_valid and label_p = Void then
+				s := cairo.create_surface (settings.page_label_width, settings.page_label_height)
+				if c_grab_screen (settings.page_label_x, settings.page_label_y,
+					settings.page_label_width, settings.page_label_height, s.data, s.stride) = 1
+				then
+					s.mark_dirty.do_nothing
+					if s.write_png (label_img_path) then
+						create cmd.make (160)
+						cmd.append_character ('%"')
+						cmd.append (worker_exe)
+						cmd.append_string_general ("%" --label-worker %"")
+						cmd.append (label_img_path)
+						cmd.append_string_general ("%" %"")
+						cmd.append (label_txt_path)
+						cmd.append_character ('%"')
+						create l.make
+						l.set_show_window (False)
+						l.start (cmd)
+						if l.is_started then
+							label_p := l
+						end
+					end
+				end
+				s.destroy
+			end
+		end
+
+	read_label_file: STRING_32
+		local
+			f: PLAIN_TEXT_FILE
+		do
+			create Result.make_empty
+			create f.make_with_name (label_txt_path)
+			if f.exists and then f.is_readable then
+				f.open_read
+				if f.count > 0 then
+					f.read_stream (f.count.min (200))
+					Result := f.last_string.to_string_32
+				end
+				f.close
+			end
+			Result.prune_all ('%R')
+			Result.prune_all ('%N')
+		end
+
+	engine_tick
+		local
+			ok: BOOLEAN
+			n: detachable CAIRO_SURFACE
+		do
+			if attached label_p as l and then l.has_finished then
+				l.close
+				label_p := Void
+				last_label := read_label_file
+				if not last_label.is_empty then
+					page_position.set_from (last_label)
+				end
+			end
+			if cyc_working and then attached worker_p as w and then w.has_finished then
+				ok := w.exit_code = 0
+				w.close
+				worker_p := Void
+				cyc_working := False
+				last_shot_ms := c_now_ms - t_page_start
+				if ok then
+					pages_done := pages_done + 1
+					push_dot (1)
+				else
+					push_dot (2)
+				end
+				if not ok then
+					stop_run ({STRING_32} "OCR worker failed %/8212/ run stopped")
+				elseif run_mode = Run_single then
+					run_mode := Run_idle
+					set_status ({STRING_32} "captured and appended in " + ms_str (last_shot_ms)
+						+ {STRING_32} " ms %/8212/ " + settings.text_file_name)
+				else
+					if clicker.click_centre_of (settings.advance_x, settings.advance_y,
+						settings.advance_width, settings.advance_height)
+					then
+						cyc_settling := True
+						t_settle := c_now_ms
+					else
+						stop_run ({STRING_32} "could not click the advance button %/8212/ run stopped")
+					end
+				end
+			end
+			if cyc_settling and then not run_paused
+				and then c_now_ms - t_settle >= settings.advance_delay_ms.max (100)
+			then
+				cyc_settling := False
+				n := grab_region_surface
+				if n = Void then
+					stop_run ({STRING_32} "screen grab failed %/8212/ run stopped")
+				elseif attached grab_cur as g and then surfaces_equal (g, n) then
+					n.destroy
+					stop_run ({STRING_32} "page stopped changing %/8212/ book finished after "
+						+ pages_done.out.to_string_32 + {STRING_32} " pages")
+				else
+					if attached grab_prev as gp then
+						gp.destroy
+					end
+					grab_prev := grab_cur
+					grab_cur := n
+					kick_capture
+				end
+			end
+		end
+
+	surfaces_equal (a, b: CAIRO_SURFACE): BOOLEAN
+		do
+			a.flush.do_nothing
+			b.flush.do_nothing
+			Result := a.width = b.width and then a.height = b.height
+				and then c_bufs_equal (a.data, b.data, a.stride * a.height) = 1
+		end
+
+	push_dot (a_kind: INTEGER)
+		do
+			dots.extend (a_kind)
+			if dots.count > 6 then
+				dots.start
+				dots.remove
+			end
+		end
+
+feature {NONE} -- Status strip window (parity with the classic strip)
+
+	strip_visible: BOOLEAN
+	strip_surface: detachable CAIRO_SURFACE
+	strip_ctx: detachable CAIRO_CONTEXT
+
+	Strip_w: INTEGER = 320
+	Strip_h: INTEGER = 430
+
+	toggle_strip
+		do
+			if strip_visible then
+				hide_strip_win
+			else
+				show_strip_win
+			end
+		end
+
+	show_strip_win
+		local
+			s: CAIRO_SURFACE
+		do
+			if strip_surface = Void then
+				s := cairo.create_surface (Strip_w, Strip_h)
+				strip_surface := s
+				strip_ctx := cairo.create_context (s)
+			end
+			if c_show_strip (settings.strip_x, settings.strip_y, Strip_w, Strip_h) /= default_pointer then
+				strip_visible := True
+				render_strip
+				blit_strip
+			end
+		end
+
+	hide_strip_win
+		do
+			c_hide_strip
+			strip_visible := False
+		end
+
+	on_strip_click (a_x, a_y: INTEGER)
+		do
+			if a_y < 26 and a_x > Strip_w - 90 then
+				if a_x > Strip_w - 90 and a_x <= Strip_w - 62 then
+					if run_mode = Run_idle then
+						start_run
+					elseif run_paused then
+						pause_resume
+					end
+				elseif a_x > Strip_w - 62 and a_x <= Strip_w - 34 then
+					pause_resume
+				else
+					stop_run ({STRING_32} "stopped from the strip")
+				end
+			end
+		end
+
+	on_strip_moved (a_x, a_y: INTEGER)
+		do
+			settings.set_strip_position (a_x, a_y)
+		end
+
+	render_strip
+		local
+			c: CAIRO_CONTEXT
+			i, x: INTEGER
+			y, sc, sw, sh: REAL_64
+			s: STRING_32
+		do
+			if attached strip_ctx as sctx then
+				c := sctx
+				c.set_color_hex (0x14181F).paint.do_nothing
+				-- dots
+				from
+					i := 1
+				until
+					i > 6
+				loop
+					if i <= dots.count then
+						if dots [i] = 1 then
+							c.set_color_hex (0x35C46F).do_nothing
+						else
+							c.set_color_hex (0xE0563A).do_nothing
+						end
+					else
+						c.set_color_hex (0x3A4250).do_nothing
+					end
+					c.fill_circle (16.0 + (i - 1) * 16.0, 14.0, 5.0).do_nothing
+					i := i + 1
+				end
+				-- state word
+				strip_font (14.0, True)
+				strip_txt (c, 118.0, 19.0, state_word, 0xE8ECF2)
+				-- transport: play / pause / stop
+				c.set_color_hex (0xB9C2CE).do_nothing
+				c.move_to (Strip_w - 84.0, 8.0).line_to (Strip_w - 84.0, 20.0)
+					.line_to (Strip_w - 73.0, 14.0).close_path.fill.do_nothing
+				c.fill_rect (Strip_w - 58.0, 8.0, 4.0, 12.0)
+					.fill_rect (Strip_w - 50.0, 8.0, 4.0, 12.0).do_nothing
+				c.fill_rect (Strip_w - 30.0, 8.0, 12.0, 12.0).do_nothing
+				-- thumbnail
+				if settings.show_thumbnail and attached grab_cur as g then
+					sc := (250.0 / g.height).min (288.0 / g.width)
+					sw := g.width * sc
+					sh := g.height * sc
+					c.set_color_hex (0xFFFFFF)
+						.fill_rect (16.0 + (288.0 - sw) / 2.0 - 3.0, 34.0 + (250.0 - sh) / 2.0 - 3.0, sw + 6.0, sh + 6.0).do_nothing
+					c.save.translate (16.0 + (288.0 - sw) / 2.0, 34.0 + (250.0 - sh) / 2.0)
+						.scale (sc, sc).set_source_surface (g, 0.0, 0.0).paint.do_nothing
+					c.restore.do_nothing
+				else
+					strip_font (10.0, False)
+					strip_txt (c, 70.0, 160.0, {STRING_32} "no capture yet", 0x8A93A0)
+				end
+				-- stats
+				y := 306.0
+				strip_font (13.0, False)
+				if page_position.has_position and page_position.has_total then
+					s := {STRING_32} "Page " + page_position.position.out.to_string_32
+						+ {STRING_32} " of " + page_position.total.out.to_string_32
+						+ {STRING_32} "   " + pct_str + {STRING_32} "%%"
+				else
+					s := {STRING_32} "Pages this run: " + pages_done.out.to_string_32
+				end
+				strip_txt (c, 16.0, y, s, 0xE8ECF2)
+				y := y + 24.0
+				strip_txt (c, 16.0, y, rate_line, 0x58D08A)
+				y := y + 24.0
+				strip_txt (c, 16.0, y, eta_line, 0x6FC7E8)
+				y := y + 24.0
+				strip_txt (c, 16.0, y, finish_line, 0xE8D06A)
+				x := 0
+			end
+		end
+
+	strip_font (a_size: REAL_64; a_bold: BOOLEAN)
+		do
+			if attached strip_ctx as c then
+				if a_bold then
+					c.select_font (f_mono, c.Slant_normal, c.Weight_bold).do_nothing
+				else
+					c.select_font (f_mono, c.Slant_normal, c.Weight_normal).do_nothing
+				end
+				c.set_font_size (a_size).do_nothing
+			end
+		end
+
+	strip_txt (a_c: CAIRO_CONTEXT; a_x, a_y: REAL_64; a_s: STRING_32; a_color: NATURAL_32)
+		do
+			a_c.set_color_hex (a_color).move_to (a_x, a_y).show_text (a_s).do_nothing
+		end
+
+	run_minutes: REAL_64
+		do
+			if t_run_start > 0.0 then
+				Result := (c_now_ms - t_run_start) / 60000.0
+			end
+		end
+
+	pages_per_min: REAL_64
+		do
+			if run_minutes > 0.05 and pages_done > 0 then
+				Result := pages_done / run_minutes
+			end
+		end
+
+	pct_str: STRING_32
+		local
+			pc: INTEGER
+		do
+			if page_position.total > 0 then
+				pc := page_position.position * 100 // page_position.total
+			end
+			Result := pc.out.to_string_32
+		end
+
+	rate_line: STRING_32
+		do
+			if pages_per_min > 0.0 then
+				Result := ms_str (pages_per_min) + {STRING_32} " pg/min   last "
+					+ ms_str (last_shot_ms / 1000.0) + {STRING_32} " s"
+			else
+				Result := {STRING_32} "measuring rate %/8230/"
+			end
+		end
+
+	eta_minutes: INTEGER
+		do
+			if pages_per_min > 0.0 and page_position.has_total and page_position.has_position
+				and page_position.total > page_position.position
+			then
+				Result := (((page_position.total - page_position.position) / pages_per_min) + 0.5).truncated_to_integer
+			end
+		end
+
+	eta_line: STRING_32
+		do
+			if eta_minutes > 0 then
+				Result := {STRING_32} "ETA " + eta_minutes.out.to_string_32
+					+ {STRING_32} " min   ("
+					+ (page_position.total - page_position.position).out.to_string_32
+					+ {STRING_32} " pages left)"
+			else
+				Result := {STRING_32} "ETA %/8212/"
+			end
+		end
+
+	finish_line: STRING_32
+		local
+			m, h: INTEGER
+			ampm: STRING_32
+		do
+			if eta_minutes > 0 then
+				m := (c_minutes_of_day + eta_minutes) \\ 1440
+				h := m // 60
+				if h >= 12 then
+					ampm := {STRING_32} " PM"
+				else
+					ampm := {STRING_32} " AM"
+				end
+				if h = 0 then
+					h := 12
+				elseif h > 12 then
+					h := h - 12
+				end
+				Result := {STRING_32} "finishing about " + h.out.to_string_32
+					+ {STRING_32} ":" + two_digits (m \\ 60) + ampm
+			else
+				create Result.make_empty
+			end
+		end
+
+	two_digits (a_n: INTEGER): STRING_32
+		do
+			create Result.make (2)
+			if a_n < 10 then
+				Result.append_character ('0')
+			end
+			Result.append_string_general (a_n.out)
+		end
+
+	blit_strip
+		local
+			hdc: POINTER
+			ws: CAIRO_SURFACE
+			c2: CAIRO_CONTEXT
+		do
+			if strip_visible and attached strip_surface as ss then
+				ss.flush.do_nothing
+				hdc := c_strip_dc
+				if hdc /= default_pointer then
+					create ws.make_for_dc (hdc)
+					if ws.is_valid then
+						create c2.make (ws)
+						c2.set_source_surface (ss, 0.0, 0.0).paint.do_nothing
+						c2.destroy
+					end
+					ws.destroy
+					c_strip_release (hdc)
+				end
 			end
 		end
 
@@ -364,15 +901,19 @@ feature {NONE} -- Tick
 			ticks := ticks + 1
 			blink_on := not blink_on
 			if hotkey_ok and then hotkey.taken_presses > 0 then
-				start_shot ({STRING_32} "hotkey")
+				begin_single
 			end
-			poll_shot
+			engine_tick
 			poll_pull
-			if not is_shooting and not is_pulling
-				and then (not did_preflight or ticks \\ 12 = 0)
+			if not is_engine_busy and not is_pulling
+				and then (not did_preflight or ticks \\ 24 = 0)
 			then
 				preflight.refresh
 				did_preflight := True
+			end
+			if strip_visible then
+				render_strip
+				blit_strip
 			end
 		end
 
@@ -899,7 +1440,7 @@ feature {NONE} -- Click routing
 				reregister_hotkey
 			when 37 then
 				settings.set_show_strip (not settings.show_strip)
-				set_status ({STRING_32} "show-strip preference stored (the strip window itself is M4)")
+				toggle_strip
 			when 38 then
 				settings.set_show_thumbnail (not settings.show_thumbnail)
 			else
@@ -913,8 +1454,12 @@ feature {NONE} -- Click routing
 			when 52 then do_test_capture
 			when 53 then begin_overlay (2)
 			when 54 then begin_overlay (3)
-			when 55, 56, 57 then
-				set_status ({STRING_32} "auto-advance transport is M4: the run engine drives Vision2 desktop outlines today")
+			when 55 then
+				start_run
+			when 56 then
+				pause_resume
+			when 57 then
+				stop_run ({STRING_32} "stopped")
 			when 58 then
 				set_status ({STRING_32} "Browse is M4 %/8212/ the folder field is directly editable meanwhile")
 			when 59 then
@@ -938,10 +1483,10 @@ feature {NONE} -- Click routing
 			when 66 then
 				set_status ({STRING_32} "Clear Log is M4")
 			when 67 then
-				set_status ({STRING_32} "the status strip window is M4 on this face; the classic strip still works")
+				toggle_strip
 			when 68, 69 then
 				set_status ({STRING_32} "image housekeeping is M4 here %/8212/ classic GUI or 'simple_ocr_capture --images' meanwhile")
-			when 70 then start_shot ({STRING_32} "button")
+			when 70 then begin_single
 			when 71 then do_save
 			else
 			end
@@ -1071,12 +1616,12 @@ feature {NONE} -- Rendering
 			x := labeled_field (x, ty, {STRING_32} "Min. settle (ms)", 13, 60.0)
 			ty := ty + 34.0
 			x := Gx + 14.0
-			x := do_button (x, ty, {STRING_32} "Start", 55, False) + 6.0
+			x := do_button (x, ty, {STRING_32} "Start", 55, True) + 6.0
 			x := do_button (x, ty, {STRING_32} "Pause", 56, False) + 6.0
 			x := do_button (x, ty, {STRING_32} "Stop", 57, False) + 16.0
 			set_font (f_mono, 10.0, False)
 			txt (x, ty + 16.0,
-				{STRING_32} "transport is M4 %/8212/ the run engine drives Vision2 outlines; fields and drag-setters are live",
+				{STRING_32} "captures, clicks the advance button, waits the settle, stops when the page stops changing",
 				C_dim)
 			Result := a_y + h
 		end
@@ -1218,7 +1763,7 @@ feature {NONE} -- Rendering
 			else
 				txt (14.0, Win_h - 10.0, elide (status_msg, Win_w - 260.0), C_dim)
 			end
-			s := {STRING_32} "shots " + shots_done.out.to_string_32 + {STRING_32} " %/183/ parity M4-in-progress"
+			s := {STRING_32} "pages " + pages_done.out.to_string_32 + {STRING_32} " %/183/ shots " + shots_done.out.to_string_32 + {STRING_32} " %/183/ " + state_word
 			txt (Win_w - 14.0 - adv (s), Win_h - 10.0, s, C_dim)
 		end
 
@@ -1557,6 +2102,48 @@ feature {NONE} -- C Externals
 			"C inline use %"ocr_cairo_win.h%""
 		alias
 			"return (int)AddFontResourceExW((LPCWSTR)$a_path, FR_PRIVATE, 0);"
+		end
+
+	c_show_strip (a_x, a_y, a_w, a_h: INTEGER): POINTER
+		external
+			"C inline use %"ocr_cairo_win.h%""
+		alias
+			"return ocw_show_strip($a_x, $a_y, $a_w, $a_h);"
+		end
+
+	c_hide_strip
+		external
+			"C inline use %"ocr_cairo_win.h%""
+		alias
+			"ocw_hide_strip();"
+		end
+
+	c_strip_dc: POINTER
+		external
+			"C inline use %"ocr_cairo_win.h%""
+		alias
+			"return ocw_strip_dc();"
+		end
+
+	c_strip_release (a_dc: POINTER)
+		external
+			"C inline use %"ocr_cairo_win.h%""
+		alias
+			"ocw_strip_release($a_dc);"
+		end
+
+	c_bufs_equal (a_a, a_b: POINTER; a_len: INTEGER): INTEGER
+		external
+			"C inline use %"ocr_cairo_win.h%""
+		alias
+			"return ocw_buffers_equal($a_a, $a_b, $a_len);"
+		end
+
+	c_minutes_of_day: INTEGER
+		external
+			"C inline use %"ocr_cairo_win.h%""
+		alias
+			"return ocw_minutes_of_day();"
 		end
 
 	c_screen_x: INTEGER
