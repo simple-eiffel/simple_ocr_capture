@@ -6,9 +6,12 @@ note
 		  <exe> --worker <img> <txt>   OCR one image, no GUI
 		  <exe> --shot <x> <y> <w> <h> capture + OCR + print (diagnostic)
 
-		Worker mode is dispatched BEFORE any Vision2 object exists. The GUI
-		spawns a worker per capture, and none of them should pay to start a
-		windowing subsystem.
+		Worker mode is dispatched BEFORE any windowing object exists.
+		The GUI spawns a worker per capture, and none of them should
+		pay to start a windowing subsystem - and since the
+		simple_widgets rebuild (2026-08-23), the GUI itself carries
+		no Vision2 either: pure Eiffel over simple_shell and
+		simple_cairo.
 	]"
 
 class
@@ -24,7 +27,7 @@ feature {NONE} -- Initialization
 		local
 			l_args: ARGUMENTS_32
 			l_cli: OCR_CLI
-			l_gui: OCR_GUI
+			l_gui: OCR_SW_GUI
 		do
 			create l_args
 			if l_args.argument_count >= 1 and then is_headless_flag (l_args.argument (1)) then

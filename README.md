@@ -25,7 +25,7 @@ want. Part of the [Simple Eiffel](https://github.com/simple-eiffel) ecosystem.
 
 ✅ **Production** — v1.6.0
 
-- Ships as a single executable — no runtime, no redistributable, no Python
+- Ships as one executable plus cairo.dll — no runtime, no Python, **no Vision2**: the GUI is [simple_widgets](https://github.com/simple-eiffel/simple_widgets) over [simple_shell](https://github.com/simple-eiffel/simple_shell), the platform library this application's own C originally seeded
 - Talks to a local Ollama server over WinHTTP; nothing leaves the machine
 - Unattended auto-advance: capture the page, turn it, capture the next
 - Full Design by Contract coverage, void-safe, SCOOP-capable

@@ -20,7 +20,7 @@ create
 
 feature {NONE} -- Initialization
 
-	make (a_settings: OCR_SETTINGS; a_strip: OCR_STATUS_STRIP)
+	make (a_settings: OCR_SETTINGS; a_strip: OCR_SW_STRIP)
 			-- Create a cycle driver.
 		do
 			settings := a_settings
@@ -290,7 +290,7 @@ feature {NONE} -- Stages
 				current_image_path, page_label, last_error, 0)
 			discard_worker
 			phase := Phase_ready
-			status_strip.set_stage ({OCR_STATUS_STRIP}.Stage_ready, truncated (a_reason))
+			status_strip.set_stage ({OCR_SW_STRIP}.Stage_ready, truncated (a_reason))
 		ensure
 			ready: not is_busy
 			reported: not last_error.is_empty
@@ -585,11 +585,11 @@ feature {NONE} -- Implementation
 
 	settings: OCR_SETTINGS
 
-	status_strip: OCR_STATUS_STRIP
+	status_strip: OCR_SW_STRIP
 			-- Not named `strip': that is a reserved word in Eiffel (the obsolete
 			-- strip expression) and assigning to it is a syntax error.
 
-	capture: OCR_CAPTURE
+	capture: OCR_GRAB
 
 	worker: detachable SIMPLE_ASYNC_PROCESS
 			-- The detached OCR process, while one is running.

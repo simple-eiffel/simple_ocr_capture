@@ -37,7 +37,7 @@ feature -- Access
 
 feature -- Basic operations
 
-	start (a_on_done: PROCEDURE [detachable TUPLE [x, y, w, h: INTEGER]])
+	start (a_on_done: PROCEDURE [TUPLE [detachable TUPLE [x, y, w, h: INTEGER]]])
 			-- Freeze the desktop and let the user drag. Calls
 			-- `a_on_done' with the rectangle in SCREEN coordinates,
 			-- or with Void on Escape / right-click / a dragless tap.
@@ -56,7 +56,7 @@ feature -- Basic operations
 			snapshot := sc.grab (origin_x, origin_y, span_w, span_h)
 			if snapshot = Void then
 				last_error := {STRING_32} "Could not capture the desktop (locked session?)."
-				a_on_done.call (Void)
+				a_on_done.call ([Void])
 			else
 				is_dragging := False
 				overlay.show
@@ -105,7 +105,7 @@ feature -- Basic operations
 			if is_active then
 				teardown
 				if attached on_done as d then
-					d.call (Void)
+					d.call ([Void])
 				end
 			end
 		ensure
@@ -173,7 +173,7 @@ feature {NONE} -- Implementation
 			if is_band_usable then
 				teardown
 				if attached on_done as d then
-					d.call ([rx, ry, rw, rh])
+					d.call ([[rx, ry, rw, rh]])
 				end
 			else
 				cancel
@@ -225,7 +225,7 @@ feature {NONE} -- Implementation
 						p.pop_clip
 						p.set_color (th.accent)
 						p.set_line_width (2.0)
-						p.rrect_stroke (band_x - 1.0, band_y - 1.0, band_w + 2.0, band_h + 2.0, 0.0)
+						p.rrect_stroke (band_x - 1.0, band_y - 1.0, band_w + 2.0, band_h + 2.0, 1.0)
 						p.set_line_width (1.0)
 					end
 					create msg.make_from_string_general ("Drag a rectangle; Esc or right-click cancels.")
@@ -247,7 +247,7 @@ feature {NONE} -- Implementation
 			create Result
 		end
 
-	on_done: detachable PROCEDURE [detachable TUPLE [x, y, w, h: INTEGER]]
+	on_done: detachable PROCEDURE [TUPLE [detachable TUPLE [x, y, w, h: INTEGER]]]
 
 	snapshot: detachable CAIRO_SURFACE
 

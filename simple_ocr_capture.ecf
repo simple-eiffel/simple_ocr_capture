@@ -20,7 +20,6 @@
 		<external_include location="$(SIMPLE_EIFFEL)/simple_ocr_capture/Clib"/>
 		<library name="base" location="$ISE_LIBRARY\library\base\base.ecf"/>
 		<library name="time" location="$ISE_LIBRARY\library\time\time.ecf"/>
-		<library name="vision2" location="$ISE_LIBRARY\library\vision2\vision2.ecf"/>
 		<!-- Deliberately NOT simple_http: it resolves libcurl.dll at runtime from
 		     EiffelStudio's studio\spec\win64\bin, which is not on PATH, so a
 		     finalized binary fails with a bare "cURL issue". Shipping it would

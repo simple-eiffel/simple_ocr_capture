@@ -38,7 +38,7 @@ create
 
 feature {NONE} -- Initialization
 
-	make (a_settings: OCR_SETTINGS; a_cycle: OCR_CYCLE; a_strip: OCR_STATUS_STRIP)
+	make (a_settings: OCR_SETTINGS; a_cycle: OCR_CYCLE; a_strip: OCR_SW_STRIP)
 			-- Prepare to drive `a_cycle'.
 		do
 			settings := a_settings
@@ -997,7 +997,7 @@ feature {NONE} -- Implementation
 	settings: OCR_SETTINGS
 	cycle: OCR_CYCLE
 	clicker: OCR_CLICKER
-	capture: OCR_CAPTURE
+	capture: OCR_GRAB
 
 	previous_text: STRING_32
 			-- Page text of the capture before this one.
@@ -1011,7 +1011,7 @@ feature {NONE} -- Implementation
 	label_worker: detachable SIMPLE_ASYNC_PROCESS
 			-- The indicator OCR process, while one is running.
 
-	status_strip: OCR_STATUS_STRIP
+	status_strip: OCR_SW_STRIP
 
 	metrics: OCR_RUN_METRICS
 			-- Rate and ETA for this run. Display only - nothing here may gate a

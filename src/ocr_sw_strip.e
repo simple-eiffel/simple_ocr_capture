@@ -333,7 +333,7 @@ feature {NONE} -- Painting
 					p.set_color (0x202228)
 					p.fill_rect (0.0, 0.0, w, h)
 					p.set_color (0x5A5E68)
-					p.rrect_stroke (0.5, 0.5, w - 1.0, h - 1.0, 0.0)
+					p.rrect_stroke (0.5, 0.5, w - 1.0, h - 1.0, 1.0)
 						-- five lights, filling left to right
 					from
 						i := 1
@@ -355,7 +355,7 @@ feature {NONE} -- Painting
 						cx := (w - th.width) // 2
 						p.draw_image (th, cx, Strip_height, th.width, th.height)
 						p.set_color (0x5A5E68)
-						p.rrect_stroke (cx - 1.0, Strip_height - 1.0, th.width + 2.0, th.height + 2.0, 0.0)
+						p.rrect_stroke (cx - 1.0, Strip_height - 1.0, th.width + 2.0, th.height + 2.0, 1.0)
 					end
 						-- page and rates beneath: the one glance that
 						-- answers "what is it on, how long left?"

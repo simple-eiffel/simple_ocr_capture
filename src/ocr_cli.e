@@ -81,10 +81,8 @@ feature {NONE} -- Modes
 			-- puts one outline at known coordinates so the result can be checked
 			-- against a screenshot rather than trusted.
 		local
-			l_app: EV_APPLICATION
-			l_outline: OCR_REGION_OUTLINE
-			l_timer: EV_TIMEOUT
-			l_colour: EV_COLOR
+			l_outlines: SHELL_OUTLINES
+			l_desktop: SHELL_DESKTOP
 			x, y, w, h, ms: INTEGER
 		do
 			if a_args.argument_count < 5 then
@@ -100,25 +98,22 @@ feature {NONE} -- Modes
 				else
 					ms := 4000
 				end
-
 				if w <= 0 or h <= 0 then
 					io.error.put_string ("width and height must be positive%N")
 					set_exit_code (1)
 				else
-					create l_app
-						-- Magenta: no reader chrome and no page is this colour, so
-						-- a pixel test cannot mistake the outline for content.
-					create l_colour.make_with_8_bit_rgb (255, 0, 255)
-					create l_outline.make (l_colour, {OCR_REGION_OUTLINE}.Pattern_dash)
-					l_outline.set_rectangle (x, y, w, h)
-					l_outline.show
-
+						-- Magenta: no reader chrome and no page is this
+						-- colour, so a pixel test cannot mistake the
+						-- outline for content. Pure route: a frame
+						-- window plus the windowless pump - no
+						-- application object at all.
+					create l_outlines
+					l_outlines.show (0, x - 3, y - 3, w + 6, h + 6, 3, 0xFF00FF)
 					print ("outline shown at (" + x.out + "," + y.out + ") "
 						+ w.out + "x" + h.out + " for " + ms.out + "ms%N")
-
-					create l_timer.make_with_interval (ms)
-					l_timer.actions.extend (agent l_app.destroy)
-					l_app.launch
+					create l_desktop
+					l_desktop.pump_for (ms)
+					l_outlines.hide (0)
 					print ("outline closed%N")
 				end
 			end

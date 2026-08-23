@@ -40,6 +40,23 @@ seeded (its ocr_cairo_win.h became simple_shell). Phase ledger:
   it lands. Sizing laws and the transport zone assaulted - including
   the cross-layer pin that the transport lives inside the C no-drag
   corner. Suite 64/64.
+- **Phases 5+6 (the window, and THE FLIP)**: OCR_SW_MAIN_WINDOW -
+  the whole settings surface as tabs (Capture, Auto-advance, Output,
+  Engine, Findings, Maintenance) over one status line; findings in a
+  real data grid; every confirm flow a drawn-modal CONTINUATION;
+  the preview an SW_IMAGE over the grab's thumbnail. OCR_SW_GUI -
+  the same composition root and agent seams, clocked by
+  simple_shell's new 50ms fast timer, routing overlay events to the
+  selector and strip events to the strip. simple_shell 1.4.0 grew
+  the fast timer, a programmatic window close, and a WINDOWLESS
+  pump (--outline now shows its magenta frame with no application
+  object at all). VISION2 IS GONE from the ECF; seven EV classes
+  deleted; ocr_cycle/ocr_auto_run capture through OCR_GRAB. The
+  installer's exe/cairo.dll sources now point at the real target.
+  One launch crash caught BY CONTRACT (rrect radius 0 violates
+  cairo's positive_radius - three squares wanted to be squares) and
+  fixed. Engine suite 64/64; app runs.
+
 
 ## [Unreleased]
 
