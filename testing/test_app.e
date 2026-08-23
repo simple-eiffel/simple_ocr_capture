@@ -57,6 +57,7 @@ feature {NONE} -- Test runners
 			rebuild_tests := t2
 			run_test (agent t2.test_band_normalizes_any_drag_direction, "band_normalizes_any_drag_direction")
 			run_test (agent t2.test_outlines_show_suspend_resume, "outlines_show_suspend_resume")
+			run_test (agent t2.test_strip_sizing_and_transport_zone, "strip_sizing_and_transport_zone")
 		end
 
 

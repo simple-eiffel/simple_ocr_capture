@@ -32,6 +32,14 @@ seeded (its ocr_cairo_win.h became simple_shell). Phase ledger:
   thickness separate them; frames sit OUTSIDE the region so walls
   never enter a capture). Suspend/resume proven with REAL windows.
   Suite 63/63.
+- **Phase 4 (the strip)**: OCR_SW_STRIP on SHELL_STRIP - stage
+  lights, caption, thumbnail, page/rates beneath it, and the
+  play/pause/stop transport from the drawn-glyph set, all painted
+  through the strip DC. Dragging is the C side gift (native
+  HTCAPTION outside the transport corner); event 22 persists where
+  it lands. Sizing laws and the transport zone assaulted - including
+  the cross-layer pin that the transport lives inside the C no-drag
+  corner. Suite 64/64.
 
 ## [Unreleased]
 

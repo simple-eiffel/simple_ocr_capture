@@ -56,4 +56,28 @@ feature -- Outline lifecycle (real frame windows, offscreen)
 			assert ("hidden", not o.is_any_shown)
 		end
 
+feature -- Strip laws (sizing measured, transport zoned)
+
+	test_strip_sizing_and_transport_zone
+		local
+			s: OCR_SW_STRIP
+			st: OCR_SETTINGS
+		do
+			create st
+			create s.make (st)
+			assert_integers_equal ("minimum width stands", 320, s.current_width)
+			assert_integers_equal ("minimum height stands", 34, s.current_height)
+			s.set_page_caption ("Page 90-92 of 139")
+			assert ("a caption line grows the height", s.current_height >= 34 + 17)
+			s.set_metrics_caption ("2.1 pages/min%N ETA 25m")
+			assert ("two metrics lines grow it again", s.current_height >= 34 + 3 * 17)
+			assert ("the play glyph answers in the corner",
+				s.transport_at (s.transport_left (s.Transport_play) + 6, 17) = s.Transport_play)
+			assert ("stop too",
+				s.transport_at (s.transport_left (s.Transport_stop) + 6, 17) = s.Transport_stop)
+			assert ("the body is not a button", s.transport_at (30, 17) = 0)
+			assert ("the transport lives inside the C no-drag corner",
+				s.transport_left (s.Transport_play) >= s.current_width - 90)
+		end
+
 end
