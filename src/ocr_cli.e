@@ -687,8 +687,7 @@ feature {NONE} -- Modes
 	run_shot (a_args: ARGUMENTS_32)
 			-- Capture, OCR, print. End-to-end pipeline check.
 		local
-			l_app: EV_APPLICATION
-			l_capture: OCR_CAPTURE
+			l_capture: OCR_GRAB
 			l_engine: OCR_ENGINE
 			l_settings: OCR_SETTINGS
 			l_png: STRING_32
@@ -708,9 +707,8 @@ feature {NONE} -- Modes
 					io.error.put_string ("width and height must be positive%N")
 					set_exit_code (1)
 				else
-						-- Vision2 objects require an application instance; no
-						-- event loop is launched, so this stays a console run.
-					create l_app
+						-- Pure route: SW_SCREEN needs no application object,
+						-- no event loop, no windowing subsystem at all.
 					create l_capture.make
 					create l_settings
 					l_settings.load
@@ -724,7 +722,7 @@ feature {NONE} -- Modes
 					end
 					l_png.append_string_general ("\ocr_shot.png")
 
-					print ("screen: " + l_capture.screen_width.out + "x" + l_capture.screen_height.out + "%N")
+					print ("screen: " + l_capture.virtual_width.out + "x" + l_capture.virtual_height.out + "%N")
 
 					if l_capture.capture_to_file (x, y, w, h, l_png, "png") then
 						print ("captured " + l_capture.last_width.out + "x" + l_capture.last_height.out

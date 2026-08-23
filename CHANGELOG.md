@@ -5,6 +5,25 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+
+## [Unreleased] — the simple_widgets rebuild (in flight)
+
+The Vision2 GUI is being rebuilt on simple_widgets / simple_shell /
+simple_cairo — the very libraries whose platform C this application
+seeded (its ocr_cairo_win.h became simple_shell). Phase ledger:
+
+- **Phase 1 (substrates)**: simple_shell 1.3.0 grew SHELL_OUTLINES
+  (click-through frame regions — the desktop outlines without the
+  four-popup-edges trick) and renumbered overlay events out of the
+  main window's namespace; simple_widgets grew the
+  set_on_shell_event seam for app-owned windows.
+- **Phase 2 (capture)**: OCR_GRAB replaces the capture engine's
+  Vision2 half — SW_SCREEN BitBlt grab, cairo PNG, a forty-line BMP
+  writer, CAIRO_SURFACE thumbnails. `--shot` no longer creates an
+  EV_APPLICATION: workers are truly windowless. Proven end-to-end:
+  a real screen grab OCR'd through the local model. Engine suite
+  61/61 throughout.
+
 ## [Unreleased]
 
 ## [1.8.0] - 2026-08-21
