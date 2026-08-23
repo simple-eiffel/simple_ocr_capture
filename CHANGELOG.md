@@ -23,6 +23,15 @@ seeded (its ocr_cairo_win.h became simple_shell). Phase ledger:
   EV_APPLICATION: workers are truly windowless. Proven end-to-end:
   a real screen grab OCR'd through the local model. Engine suite
   61/61 throughout.
+- **Phase 3 (regions)**: OCR_SW_SELECTOR - the frozen-desktop drag
+  picker on SHELL_OVERLAY, painted with a full SW_PAINTER through
+  the overlay DC (dim wash, band re-lit, banner); the band law is
+  pure and assaulted with bare numbers (any drag direction names
+  the same box; a tap is a cancel). OCR_SW_OUTLINES - the three
+  region outlines as click-through frame windows (colour AND wall
+  thickness separate them; frames sit OUTSIDE the region so walls
+  never enter a capture). Suspend/resume proven with REAL windows.
+  Suite 63/63.
 
 ## [Unreleased]
 

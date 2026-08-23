@@ -32,6 +32,9 @@ feature {NONE} -- Initialization
 			print ("%N-- store file tests --%N")
 			run_store_file_tests
 
+			print ("%N-- simple_widgets rebuild tests --%N")
+			run_rebuild_tests
+
 			print ("%N========================%N")
 			print ("Results: " + passed.out + " passed, " + failed.out + " failed%N")
 
@@ -43,6 +46,19 @@ feature {NONE} -- Initialization
 		end
 
 feature {NONE} -- Test runners
+
+	rebuild_tests: detachable SW_REBUILD_TESTS
+
+	run_rebuild_tests
+		local
+			t2: SW_REBUILD_TESTS
+		do
+			create t2
+			rebuild_tests := t2
+			run_test (agent t2.test_band_normalizes_any_drag_direction, "band_normalizes_any_drag_direction")
+			run_test (agent t2.test_outlines_show_suspend_resume, "outlines_show_suspend_resume")
+		end
+
 
 	run_lib_tests
 		do
