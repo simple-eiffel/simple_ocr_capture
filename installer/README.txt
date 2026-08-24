@@ -2,7 +2,14 @@ Simple OCR Capture
 ==================
 
 Capture a region of the screen, run it through a local OCR model, and append
-the text to a single file. Built for reading through a document page by page:
+the text to a single file.
+
+New in 1.8.0: the interface is rebuilt on the simple_widgets toolkit
+(pure Eiffel - no Vision2). Settings are organised into tabs; findings
+live in a real grid; the region picker dims the frozen desktop and
+re-lights your selection; the desktop outlines are click-through
+frames; right-clicking a misspelled word now offers Ignore and Add to
+dictionary (your Windows dictionary - Edge and Office honour it too). Built for reading through a document page by page:
 set the region once, then hit the hotkey after each page turn.
 
 

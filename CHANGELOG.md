@@ -6,7 +6,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
-## [Unreleased] — the simple_widgets rebuild (in flight)
+## [1.8.0] - 2026-08-23 — rebuilt on simple_widgets
 
 The Vision2 GUI is being rebuilt on simple_widgets / simple_shell /
 simple_cairo — the very libraries whose platform C this application
@@ -195,6 +195,6 @@ not kept; the dates are those of the published installer artifacts.
 | 1.1.0 | 2026-08-08 |
 | 1.0.0 | 2026-08-06 |
 
-[Unreleased]: https://github.com/simple-eiffel/simple_ocr_capture/compare/v1.7.0...HEAD
+[1.8.0]: https://github.com/simple-eiffel/simple_ocr_capture/compare/v1.7.0...v1.8.0
 [1.7.0]: https://github.com/simple-eiffel/simple_ocr_capture/compare/v1.6.0...v1.7.0
 [1.6.0]: https://github.com/simple-eiffel/simple_ocr_capture/releases/tag/v1.6.0
