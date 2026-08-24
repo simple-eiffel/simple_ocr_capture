@@ -401,17 +401,18 @@ feature {NONE} -- Building
 
 	output_page: SW_COLUMN
 		local
-			row: SW_ROW
+			row, folder_row: SW_ROW
 		do
 			create Result.make
 			Result := Result.with_gap (10.0)
 			create field_folder.make_single_line ("")
 			field_folder.set_on_change (agent on_field_changed)
 			field_folder.set_grow (1.0)
-			create row.make
-			row := row.add (labelled ("Folder", field_folder))
-				.add (create {SW_BUTTON}.make ("Browse...", agent on_browse))
-			Result.put (row)
+			create folder_row.make
+			folder_row := folder_row.add (labelled ("Folder", field_folder))
+			folder_row.children.first.set_grow (1.0)
+			folder_row := folder_row.add (create {SW_BUTTON}.make ("Browse...", agent on_browse))
+			Result.put (folder_row)
 			create field_text_name.make_single_line ("")
 			field_text_name.set_on_change (agent on_field_changed)
 			Result.put (labelled ("Text file", field_text_name))
