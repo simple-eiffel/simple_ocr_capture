@@ -6,6 +6,64 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [1.9.0] - 2026-08-25 — the region picker no longer locks the session
+
+Critical fix. In 1.8.0, pressing any of the three "drag a region"
+buttons froze the entire Windows session: crosshair cursor, a desktop
+that ignored every click and key, and nothing short of Ctrl+Alt+Del
+and signing out would end it.
+
+### The cause
+
+`simple_shell.h` kept its shared state - the event queue, the window
+handles - as file-scope `static` data in a header included by the
+inline externals of five classes. Finalized C compiles each class
+into its own translation unit, and every unit gets a PRIVATE copy of
+every static. The overlay's window procedure pushed its events
+(mouse, Escape, right-click) into SHELL_OVERLAY's copy of the queue;
+the pump drained SHELL_WINDOW's. Nothing ever arrived. The topmost
+fullscreen picker sat over every monitor eating all input, with no
+handler left alive to dismiss it. (Pre-1.8.0 builds were immune by
+accident: all the C lived in one class, hence one unit.)
+
+### Fixed
+
+- **simple_shell 1.6.0**: every mutable global in `simple_shell.h`
+  is now `SHELL_SHARED` (`__declspec(selectany)`) - linker-merged
+  into ONE process-wide instance regardless of how many generated
+  files include the header. A regression test pushes a marker event
+  from one class's translation unit and drains it through another's;
+  it cannot pass on the 1.8.0 arrangement. Shell assault 13/13.
+- **Escape hatches below the Eiffel loop**: the overlay window
+  procedure hides the overlay ITSELF on Escape, right-click and
+  Alt+F4 before reporting the cancel; a dead-man watchdog thread
+  reads the physical Escape key (GetAsyncKeyState - no focus, no
+  queue needed) - held ~2 seconds posts the cancel, still visible at
+  ~5 exits the process. Losing the application beats losing the
+  session.
+- **simple_widgets**: modal surfaces (dialogs, popup menus,
+  pick-and-drop) no longer swallow shell events (21..23 strip, 25
+  fast tick, 31..35 overlay). A health dialog opening mid-drag would
+  have trapped the user under the overlay a second way; now Escape
+  still lands, and the capture clock keeps ticking behind any
+  dialog. Widgets assault 193/193.
+
+### Also healed by the same root cause
+
+- Status strip clicks (the transport corner), drag-position memory
+  and expose repaints - their events (21..23) were going into a
+  third orphaned copy of the queue in 1.8.0.
+- The clipboard now opens against the real window handle instead of
+  a translation unit's null copy of it.
+
+### If it ever wedges again
+
+Escape held five seconds force-quits the application from a watchdog
+thread even if its event loop is gone. And independent of this app:
+Ctrl+Win+D opens a fresh virtual desktop (the overlay stays behind),
+from which Task Manager can end the process - no sign-out needed.
+
+
 ## [1.8.0] - 2026-08-23 — rebuilt on simple_widgets
 
 The Vision2 GUI is being rebuilt on simple_widgets / simple_shell /
@@ -195,6 +253,7 @@ not kept; the dates are those of the published installer artifacts.
 | 1.1.0 | 2026-08-08 |
 | 1.0.0 | 2026-08-06 |
 
+[1.9.0]: https://github.com/simple-eiffel/simple_ocr_capture/compare/v1.8.0...v1.9.0
 [1.8.0]: https://github.com/simple-eiffel/simple_ocr_capture/compare/v1.7.0...v1.8.0
 [1.7.0]: https://github.com/simple-eiffel/simple_ocr_capture/compare/v1.6.0...v1.7.0
 [1.6.0]: https://github.com/simple-eiffel/simple_ocr_capture/releases/tag/v1.6.0

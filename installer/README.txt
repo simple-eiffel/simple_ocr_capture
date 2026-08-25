@@ -4,6 +4,14 @@ Simple OCR Capture
 Capture a region of the screen, run it through a local OCR model, and append
 the text to a single file.
 
+New in 1.9.0: critical fix - the region picker no longer freezes the
+Windows session. Its events were being lost to a private
+translation-unit copy of the event queue; they now reach the
+application, and the picker carries its own escape hatches: Esc,
+right-click and Alt+F4 dismiss it at the window level, and Esc held
+five seconds force-quits the application even if its event loop is
+gone.
+
 New in 1.8.0: the interface is rebuilt on the simple_widgets toolkit
 (pure Eiffel - no Vision2). Settings are organised into tabs; findings
 live in a real grid; the region picker dims the frozen desktop and

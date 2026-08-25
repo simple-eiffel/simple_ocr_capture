@@ -23,7 +23,7 @@ want. Part of the [Simple Eiffel](https://github.com/simple-eiffel) ecosystem.
 
 ## Status
 
-✅ **Production** — v1.8.0
+✅ **Production** — v1.9.0
 
 - Ships as one executable plus cairo.dll — no runtime, no Python, **no Vision2**: the GUI is [simple_widgets](https://github.com/simple-eiffel/simple_widgets) over [simple_shell](https://github.com/simple-eiffel/simple_shell), the platform library this application's own C originally seeded
 - Talks to a local Ollama server over WinHTTP; nothing leaves the machine
