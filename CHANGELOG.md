@@ -48,6 +48,14 @@ accident: all the C lived in one class, hence one unit.)
   still lands, and the capture clock keeps ticking behind any
   dialog. Widgets assault 193/193.
 
+### Added
+
+- **The build is always checkable**: the title bar now carries the
+  version ("Simple OCR Capture 1.9.0"), and Maintenance grows an
+  About... dialog - version, build date, substrate, and the picker's
+  escape hatch. OCR_VERSION is the one authoritative mark; keep it
+  in step with the installer's AppVersion at every release.
+
 ### Also healed by the same root cause
 
 - Status strip clicks (the transport corner), drag-position memory

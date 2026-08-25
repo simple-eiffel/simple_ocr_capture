@@ -30,7 +30,7 @@ feature {NONE} -- Initialization
 			cycle := a_cycle
 			status_strip := a_strip
 			create theme.make_dark
-			create window.make ("Simple OCR Capture", 120, 60, 980, 900, theme)
+			create window.make ("Simple OCR Capture " + {OCR_VERSION}.Version, 120, 60, 980, 900, theme)
 			create findings_rows.make (16)
 			create selector.make
 
@@ -510,7 +510,10 @@ feature {NONE} -- Building
 				.add (create {SW_BUTTON}.make ("Clear Log", agent on_clear_log))
 				.add (create {SW_BUTTON}.make ("Clear All...", agent on_clear_all))
 			Result.put (row)
-			Result.put ((create {SW_BUTTON}.make ("Quit", agent on_quit_pressed)).as_kind ({SW_BUTTON}.Kind_danger))
+			create row.make
+			row := row.add (create {SW_BUTTON}.make ("About...", agent on_about))
+				.add ((create {SW_BUTTON}.make ("Quit", agent on_quit_pressed)).as_kind ({SW_BUTTON}.Kind_danger))
+			Result.put (row)
 		end
 
 feature {NONE} -- Actions
@@ -548,6 +551,23 @@ feature {NONE} -- Actions
 		do
 			store_to_settings
 			status_strip.set_thumbnail_visible (settings.show_thumbnail)
+		end
+
+	on_about
+			-- The running build, checkable at will: version, date,
+			-- substrate, and the picker's escape hatch.
+		local
+			d: SW_DIALOG
+		do
+			create d.make ({SW_DIALOG}.Kind_info, "About Simple OCR Capture",
+				{STRING_32} "Simple OCR Capture " + {OCR_VERSION}.Version
+				+ {STRING_32} " (built " + {OCR_VERSION}.Built + {STRING_32} ")"
+				+ {STRING_32} "%N%NReads a book through your screen: capture a region, OCR it through a local model, append the text to one file."
+				+ {STRING_32} "%N%NGUI: simple_widgets over simple_shell and cairo - no Vision2, no runtime, nothing leaves the machine."
+				+ {STRING_32} "%N%NIf the region picker is ever stuck: hold Esc for five seconds and the application quits itself."
+				+ {STRING_32} "%N%Ngithub.com/simple-eiffel/simple_ocr_capture")
+			d.add_button ("OK", True, Void)
+			window.show_dialog (d)
 		end
 
 	on_set_region
