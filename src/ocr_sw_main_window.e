@@ -25,6 +25,7 @@ feature {NONE} -- Initialization
 	make (a_settings: OCR_SETTINGS; a_cycle: OCR_CYCLE; a_strip: OCR_SW_STRIP)
 		local
 			root: SW_COLUMN
+			bar: SW_MENU_BAR
 		do
 			settings := a_settings
 			cycle := a_cycle
@@ -36,6 +37,9 @@ feature {NONE} -- Initialization
 
 			create root.make
 			root := root.with_padding (12.0).with_gap (10.0)
+			create bar.make
+			bar.add_menu ("Help", agent help_menu)
+			root.put (bar)
 			build_status (root)
 			build_tabs (root)
 			window.set_root (root)
@@ -510,10 +514,7 @@ feature {NONE} -- Building
 				.add (create {SW_BUTTON}.make ("Clear Log", agent on_clear_log))
 				.add (create {SW_BUTTON}.make ("Clear All...", agent on_clear_all))
 			Result.put (row)
-			create row.make
-			row := row.add (create {SW_BUTTON}.make ("About...", agent on_about))
-				.add ((create {SW_BUTTON}.make ("Quit", agent on_quit_pressed)).as_kind ({SW_BUTTON}.Kind_danger))
-			Result.put (row)
+			Result.put ((create {SW_BUTTON}.make ("Quit", agent on_quit_pressed)).as_kind ({SW_BUTTON}.Kind_danger))
 		end
 
 feature {NONE} -- Actions
@@ -553,9 +554,18 @@ feature {NONE} -- Actions
 			status_strip.set_thumbnail_visible (settings.show_thumbnail)
 		end
 
+	help_menu: SW_MENU
+			-- Help's dropdown, built fresh on every open as menu
+			-- builders are.
+		do
+			create Result.make
+			Result.add_item ("About Simple OCR Capture...", "", True, agent on_about)
+		end
+
 	on_about
 			-- The running build, checkable at will: version, date,
-			-- substrate, and the picker's escape hatch.
+			-- the AI models in play, substrate, and the picker's
+			-- escape hatch.
 		local
 			d: SW_DIALOG
 		do
@@ -563,6 +573,9 @@ feature {NONE} -- Actions
 				{STRING_32} "Simple OCR Capture " + {OCR_VERSION}.Version
 				+ {STRING_32} " (built " + {OCR_VERSION}.Built + {STRING_32} ")"
 				+ {STRING_32} "%N%NReads a book through your screen: capture a region, OCR it through a local model, append the text to one file."
+				+ {STRING_32} "%N%NOCR model: " + settings.model
+				+ {STRING_32} "%NEndpoint: " + settings.endpoint
+				+ {STRING_32} "%NPage labels: Windows OCR (winocr_label.ps1); falls back to the model."
 				+ {STRING_32} "%N%NGUI: simple_widgets over simple_shell and cairo - no Vision2, no runtime, nothing leaves the machine."
 				+ {STRING_32} "%N%NIf the region picker is ever stuck: hold Esc for five seconds and the application quits itself."
 				+ {STRING_32} "%N%Ngithub.com/simple-eiffel/simple_ocr_capture")
