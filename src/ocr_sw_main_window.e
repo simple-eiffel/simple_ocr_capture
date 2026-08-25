@@ -563,24 +563,29 @@ feature {NONE} -- Actions
 		end
 
 	on_about
-			-- The running build, checkable at will: version, date,
-			-- the AI models in play, substrate, and the picker's
-			-- escape hatch.
+			-- The running build as a composed panel: identity, the AI
+			-- models in play, substrate, and the picker's escape
+			-- hatch. A centered sheet - truly modal; its close X or
+			-- Escape dismisses it.
 		local
-			d: SW_DIALOG
+			col: SW_COLUMN
 		do
-			create d.make ({SW_DIALOG}.Kind_info, "About Simple OCR Capture",
-				{STRING_32} "Simple OCR Capture " + {OCR_VERSION}.Version
-				+ {STRING_32} " (built " + {OCR_VERSION}.Built + {STRING_32} ")"
-				+ {STRING_32} "%N%NReads a book through your screen: capture a region, OCR it through a local model, append the text to one file."
-				+ {STRING_32} "%N%NOCR model: " + settings.model
-				+ {STRING_32} "%NEndpoint: " + settings.endpoint
-				+ {STRING_32} "%NPage labels: Windows OCR (winocr_label.ps1); falls back to the model."
-				+ {STRING_32} "%N%NGUI: simple_widgets over simple_shell and cairo - no Vision2, no runtime, nothing leaves the machine."
-				+ {STRING_32} "%N%NIf the region picker is ever stuck: hold Esc for five seconds and the application quits itself."
-				+ {STRING_32} "%N%Ngithub.com/simple-eiffel/simple_ocr_capture")
-			d.add_button ("OK", True, Void)
-			window.show_dialog (d)
+			create col.make
+			col := col.with_padding (6.0).with_gap (10.0)
+			col.put (create {SW_LABEL}.make ("Simple OCR Capture", {SW_PAINTER}.Role_ui, 20.0, True))
+			col.put ((create {SW_LABEL}.make_ui ("Version " + {OCR_VERSION}.Version + " - built " + {OCR_VERSION}.Built)).as_muted)
+			col.put (create {SW_LABEL}.make_body ("Reads a book through your screen: capture a region, OCR it through a local model, append the text to one file. Nothing leaves the machine."))
+			col.put (create {SW_SEPARATOR}.make_labeled ("AI models"))
+			col.put (labelled ("OCR model", create {SW_LABEL}.make_mono (settings.model)))
+			col.put (labelled ("Endpoint", create {SW_LABEL}.make_mono (settings.endpoint)))
+			col.put (labelled ("Page labels", create {SW_LABEL}.make_mono ("Windows OCR (winocr_label.ps1)")))
+			col.put ((create {SW_LABEL}.make_ui ("Page labels fall back to the OCR model when the script is missing.")).as_muted)
+			col.put (create {SW_SEPARATOR}.make_labeled ("Built on"))
+			col.put (create {SW_LABEL}.make_body ("simple_widgets over simple_shell and cairo - pure Eiffel and Win32: no Vision2, no runtime, no redistributable."))
+			col.put (create {SW_SEPARATOR}.make_labeled ("If the region picker is ever stuck"))
+			col.put (create {SW_LABEL}.make_body ("Esc, right-click or Alt+F4 cancels a drag. Held for five seconds, Esc quits the application itself - the picker can never take the session with it."))
+			col.put ((create {SW_LABEL}.make_ui ("github.com/simple-eiffel/simple_ocr_capture")).as_muted)
+			window.show_sheet (col, 600.0)
 		end
 
 	on_set_region

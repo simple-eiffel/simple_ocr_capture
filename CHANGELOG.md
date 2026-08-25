@@ -52,11 +52,13 @@ accident: all the C lived in one class, hence one unit.)
 
 - **The build is always checkable**: the title bar carries the
   version ("Simple OCR Capture 1.9.0"), and a menu bar arrives with
-  Help -> About - a modal with version, build date, the AI models in
-  play (OCR model and endpoint from live settings; the Windows OCR
-  page-label reader and its model fallback), substrate, and the
-  picker's escape hatch. OCR_VERSION is the one authoritative mark;
-  keep it in step with the installer's AppVersion at every release.
+  Help -> About - a composed modal panel (title, version and build
+  date, an AI-models section naming the OCR model, endpoint and
+  page-label reader straight from live settings, the substrate, and
+  the picker's escape hatch), built from labels, labelled separators
+  and fact rows rather than one wrapped text run. OCR_VERSION is the
+  one authoritative mark; keep it in step with the installer's
+  AppVersion at every release.
 
 ### Also healed by the same root cause
 
