@@ -78,6 +78,16 @@ feature {NONE} -- Test runners
 			run_test (agent lib_tests.test_compare_different, "test_compare_different")
 			run_test (agent lib_tests.test_compare_symmetric, "test_compare_symmetric")
 
+			run_test (agent lib_tests.test_finder_keeps_the_blob_drops_the_speck, "test_finder_keeps_the_blob_drops_the_speck")
+			run_test (agent lib_tests.test_finder_text_mask_wins, "test_finder_text_mask_wins")
+			run_test (agent lib_tests.test_weaver_pairs_extras_and_leftovers, "test_weaver_pairs_extras_and_leftovers")
+			run_test (agent lib_tests.test_compare_ignores_markdown_image_lines, "test_compare_ignores_markdown_image_lines")
+			run_test (agent lib_tests.test_settings_markdown_transcript_name, "test_settings_markdown_transcript_name")
+
+			run_test (agent lib_tests.test_metrics_freezes_first_estimate, "test_metrics_freezes_first_estimate")
+			run_test (agent lib_tests.test_metrics_drift_runs_late, "test_metrics_drift_runs_late")
+			run_test (agent lib_tests.test_metrics_drift_beats_the_guess, "test_metrics_drift_beats_the_guess")
+
 			run_test (agent lib_tests.test_image_name_from_indicator, "test_image_name_from_indicator")
 			run_test (agent lib_tests.test_image_name_strips_separators, "test_image_name_strips_separators")
 			run_test (agent lib_tests.test_image_name_falls_back_to_counter, "test_image_name_falls_back_to_counter")

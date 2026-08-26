@@ -33,6 +33,10 @@ feature {NONE} -- Initialization
 			create page_label.make_empty
 			create current_image_path.make_empty
 			create current_text_path.make_empty
+			create boxes_path.make_empty
+			create pending_text.make_empty
+			create classify_queue.make (0)
+			create accepted_links.make (0)
 			phase := Phase_ready
 		end
 
@@ -118,6 +122,12 @@ feature -- Basic operations
 							-- than 40 seconds later.
 						status_strip.set_thumbnail (capture.last_thumbnail)
 						announce (2, "captured, running OCR...")
+						if is_figures_active then
+								-- the text mask rides ENTIRELY under the
+								-- model's seconds: Windows OCR takes half
+								-- of one
+							start_boxes_worker
+						end
 						start_worker
 							-- Fired once the screenshot is safely on disk and the
 							-- OCR is under way. The auto-advance driver turns the
@@ -137,7 +147,22 @@ feature -- Basic operations
 		do
 			if phase = Phase_ocr and then attached worker as al_worker then
 				if al_worker.has_finished then
-					harvest (al_worker)
+					if is_figures_active and then attached boxes_worker as al_boxes
+						and then not al_boxes.has_finished
+						and then boxes_wait_ticks < Boxes_wait_limit
+					then
+							-- the model beat Windows OCR to the finish -
+							-- rare, but give the mask a moment before
+							-- giving up on figures for this page
+						boxes_wait_ticks := boxes_wait_ticks + 1
+					else
+						discard_boxes_worker
+						harvest (al_worker)
+					end
+				end
+			elseif phase = Phase_classify and then attached classify_worker as al_classifier then
+				if al_classifier.has_finished then
+					harvest_classification
 				end
 			end
 		end
@@ -173,6 +198,9 @@ feature -- Basic operations
 			-- Force the cycle back to its resting state.
 		do
 			discard_worker
+			discard_boxes_worker
+			discard_classify_worker
+			classify_queue.wipe_out
 			phase := Phase_ready
 			announce (5, "READY")
 		ensure
@@ -216,7 +244,6 @@ feature {NONE} -- Stages
 			-- Collect the worker's output and finish the cycle.
 		local
 			l_text: detachable STRING_32
-			l_reason: STRING_32
 		do
 			l_text := read_utf8 (current_text_path)
 			discard_worker
@@ -238,44 +265,65 @@ feature {NONE} -- Stages
 					-- TEXT is not, and it left three copies of the last page in
 					-- every transcript to be trimmed by hand afterwards.
 					--
-					-- Byte-identical only. Two different pages are never
-					-- identical, so this cannot drop real content; the worst it
-					-- can cost is one of two consecutive blank pages.
+					-- Byte-identical only, and on the RAW model text - the woven
+					-- figure links carry per-capture file names, so the
+					-- assembled block can never be the identity witness.
 				if settings.save_text and then l_text.same_string (last_appended_text) then
 					log ("identical to the previous block - not appended (retry capture)")
+					complete_cycle
 				elseif settings.save_text then
-					if append_to_master (l_text) then
-						last_appended_text := l_text.twin
+					last_appended_text := l_text.twin
+					if is_figures_active then
+						begin_figures (l_text)
 					else
-						l_reason := {STRING_32} "Could not write to "
-						l_reason.append (settings.text_file_path)
-						fail (l_reason)
+						append_and_complete (l_text)
 					end
-				end
-
-				if not last_error.is_empty then
-						-- append_to_master already reported
 				else
-						-- Recorded before the image is disposed of, and named only
-						-- when one was actually kept: a row pointing at a file
-						-- that was deleted a line later would be worse than a row
-						-- with no file name at all.
-					if settings.save_image then
-						run_log.record_capture (settings.capture_index,
-							current_image_path, page_label, "", l_text.count)
-					else
-						run_log.record_capture (settings.capture_index,
-							"", page_label, "", l_text.count)
-						delete_file (current_image_path)
-					end
-					delete_file (current_text_path)
-
-					completed_count := completed_count + 1
-					settings.store
-					phase := Phase_ready
-					announce (5, "READY")
+					complete_cycle
 				end
 			end
+		end
+
+	append_and_complete (a_block: READABLE_STRING_32)
+			-- Write `a_block' to the transcript and close the cycle
+			-- out; a write failure fails the cycle.
+		local
+			l_reason: STRING_32
+		do
+			if append_to_master (a_block) then
+				complete_cycle
+			else
+				l_reason := {STRING_32} "Could not write to "
+				l_reason.append (settings.transcript_file_path)
+				fail (l_reason)
+			end
+		end
+
+	complete_cycle
+			-- The bookkeeping tail every successful path shares:
+			-- record, tidy scratch files, count, announce READY.
+		do
+				-- Recorded before the image is disposed of, and named only
+				-- when one was actually kept: a row pointing at a file
+				-- that was deleted a line later would be worse than a row
+				-- with no file name at all.
+			if settings.save_image then
+				run_log.record_capture (settings.capture_index,
+					current_image_path, page_label, "", last_text.count)
+			else
+				run_log.record_capture (settings.capture_index,
+					"", page_label, "", last_text.count)
+				delete_file (current_image_path)
+			end
+			delete_file (current_text_path)
+			delete_file (boxes_path)
+
+			completed_count := completed_count + 1
+			settings.store
+			phase := Phase_ready
+			announce (5, "READY")
+		ensure
+			ready: not is_busy
 		end
 
 	fail (a_reason: READABLE_STRING_GENERAL)
@@ -289,6 +337,9 @@ feature {NONE} -- Stages
 			run_log.record_capture (settings.capture_index,
 				current_image_path, page_label, last_error, 0)
 			discard_worker
+			discard_boxes_worker
+			discard_classify_worker
+			classify_queue.wipe_out
 			phase := Phase_ready
 			status_strip.set_stage ({OCR_SW_STRIP}.Stage_ready, truncated (a_reason))
 		ensure
@@ -363,7 +414,7 @@ feature {NONE} -- Files
 					l_dir.recursive_create_dir
 				end
 
-				create l_path.make_from_string (settings.text_file_path)
+				create l_path.make_from_string (settings.transcript_file_path)
 				create l_file.make_with_path (l_path)
 				if l_file.exists then
 					l_file.open_append
@@ -388,22 +439,35 @@ feature {NONE} -- Files
 		end
 
 	separator_for (a_index: INTEGER): STRING_32
-			-- Header written before each capture's text.
+			-- Header written before each capture's text: a dashed line
+			-- in plain-text mode, a level-four heading in Markdown.
 		local
 			l_time: DATE_TIME
 		do
 			create l_time.make_now
 			create Result.make (80)
-			Result.append_string_general ("----- capture ")
-			Result.append_string_general (a_index.out)
-			if not page_label.is_empty then
-				Result.append_string_general ("  [page ")
-				Result.append (page_label)
-				Result.append_character (']')
+			if settings.markdown_output then
+				Result.append_string_general ("#### Capture ")
+				Result.append_string_general (a_index.out)
+				if not page_label.is_empty then
+					Result.append_string_general (" - page ")
+					Result.append (page_label)
+				end
+				Result.append_string_general (" - ")
+				Result.append_string_general (l_time.out)
+				Result.append_string_general ("%N%N")
+			else
+				Result.append_string_general ("----- capture ")
+				Result.append_string_general (a_index.out)
+				if not page_label.is_empty then
+					Result.append_string_general ("  [page ")
+					Result.append (page_label)
+					Result.append_character (']')
+				end
+				Result.append_string_general ("  ")
+				Result.append_string_general (l_time.out)
+				Result.append_string_general (" -----%N")
 			end
-			Result.append_string_general ("  ")
-			Result.append_string_general (l_time.out)
-			Result.append_string_general (" -----%N")
 		end
 
 	image_path_for (a_index: INTEGER): STRING_32
@@ -544,6 +608,338 @@ feature {NONE} -- Files
 			retry
 		end
 
+feature {NONE} -- Figures
+
+	is_figures_active: BOOLEAN
+			-- Is the figure pipeline on for this run? Strictly the
+			-- user's opt-in, and only atop the Markdown transcript.
+		do
+			Result := settings.extract_figures and settings.markdown_output
+		end
+
+	start_boxes_worker
+			-- Launch Windows OCR over the whole page for word
+			-- bounding boxes - the text mask. Concurrent with the
+			-- model's own OCR; missing script means no mask and no
+			-- figures this page, never a failed cycle.
+		local
+			l_cmd: STRING_32
+			l_process: SIMPLE_ASYNC_PROCESS
+		do
+			discard_boxes_worker
+			boxes_wait_ticks := 0
+			boxes_path := boxes_path_for (settings.capture_index)
+			delete_file (boxes_path)
+			if attached boxes_script_path as al_script then
+				create l_cmd.make (300)
+				l_cmd.append_string_general ("powershell.exe -NoProfile -ExecutionPolicy Bypass -File %"")
+				l_cmd.append (al_script)
+				l_cmd.append_string_general ("%" %"")
+				l_cmd.append (current_image_path)
+				l_cmd.append_string_general ("%" %"")
+				l_cmd.append (boxes_path)
+				l_cmd.append_character ('%"')
+				create l_process.make
+				l_process.set_show_window (False)
+				l_process.start (l_cmd)
+				if l_process.is_started then
+					boxes_worker := l_process
+				else
+					log ("could not start the boxes worker - no figures this page")
+				end
+			else
+				log ("winocr_boxes.ps1 not found - no figures this page")
+			end
+		end
+
+	boxes_script_path: detachable STRING_32
+			-- winocr_boxes.ps1 beside the executable (installed), or
+			-- in the repository's ocr_cairo (development); Void when
+			-- neither exists.
+		local
+			l_dir: STRING_32
+		do
+			l_dir := executable_directory
+			Result := l_dir + {STRING_32} "winocr_boxes.ps1"
+			if not file_exists (Result) then
+				Result := l_dir + {STRING_32} "..\..\..\ocr_cairo\winocr_boxes.ps1"
+				if not file_exists (Result) then
+					Result := Void
+				end
+			end
+		end
+
+	executable_directory: STRING_32
+			-- Folder of this program, trailing separator included.
+		local
+			i: INTEGER
+		do
+			create Result.make_from_string (executable_path)
+			i := Result.last_index_of ('\', Result.count)
+			if i > 0 then
+				Result.keep_head (i)
+			else
+				create Result.make_empty
+			end
+		end
+
+	begin_figures (a_text: READABLE_STRING_32)
+			-- Detect, crop and queue classification for the current
+			-- page; falls straight through to a plain append when the
+			-- page offers nothing.
+		local
+			l_finder: OCR_FIGURE_FINDER
+			l_rects: ARRAYED_LIST [TUPLE [x, y, w, h: INTEGER]]
+			l_weaver: OCR_MD_WEAVER
+		do
+			create pending_text.make_from_string_general (a_text)
+			create l_finder.make
+			l_rects := l_finder.find (current_image_path, boxes_path)
+			if l_rects.is_empty then
+				create l_weaver
+				append_and_complete (l_weaver.woven (pending_text, accepted_links_wiped))
+			else
+				log ({STRING_32} "figure candidates: " + l_rects.count.out)
+				build_classify_queue (l_rects)
+				if classify_queue.is_empty then
+					create l_weaver
+					append_and_complete (l_weaver.woven (pending_text, accepted_links))
+				else
+					phase := Phase_classify
+					announce (4, "classifying figures...")
+					start_next_classify
+				end
+			end
+		end
+
+	accepted_links_wiped: ARRAYED_LIST [READABLE_STRING_32]
+			-- The accepted-links list, emptied: no candidates means
+			-- any marker the model emitted has no crop to satisfy it.
+		do
+			accepted_links.wipe_out
+			Result := accepted_links
+		ensure
+			empty: Result.is_empty
+		end
+
+	build_classify_queue (a_rects: ARRAYED_LIST [TUPLE [x, y, w, h: INTEGER]])
+			-- Crop each candidate from the page image into the images
+			-- folder and queue its one-word classification.
+		local
+			l_page, l_crop: CAIRO_SURFACE
+			l_ctx: CAIRO_CONTEXT
+			l_dir: DIRECTORY
+			i: INTEGER
+			l_name, l_crop_path, l_verdict: STRING_32
+			l_retried: BOOLEAN
+		do
+			if not l_retried then
+				classify_queue.wipe_out
+				accepted_links.wipe_out
+				create l_page.make_from_png (current_image_path)
+				if l_page.is_valid then
+					create l_dir.make_with_name (images_folder)
+					if not l_dir.exists then
+						l_dir.recursive_create_dir
+					end
+					across
+						a_rects as ic_rect
+					loop
+						i := i + 1
+						l_name := image_stem_name + {STRING_32} "_fig" + i.out + {STRING_32} ".png"
+						l_crop_path := images_folder + l_name
+						create l_crop.make (ic_rect.w, ic_rect.h)
+						create l_ctx.make (l_crop)
+						l_ctx.set_source_surface (l_page, -ic_rect.x, -ic_rect.y).paint.do_nothing
+						l_ctx.destroy
+						l_crop.flush.do_nothing
+						if l_crop.write_png (l_crop_path) then
+							l_verdict := l_crop_path + {STRING_32} ".verdict.txt"
+							delete_file (l_verdict)
+							classify_queue.extend ([l_crop_path, l_verdict,
+								{STRING_32} "images/" + l_name])
+						end
+						l_crop.destroy
+					end
+				end
+				l_page.destroy
+			end
+		rescue
+			l_retried := True
+			retry
+		end
+
+	start_next_classify
+			-- Spawn the classifier on the queue's head; a spawn
+			-- failure ACCEPTS the figure (it was non-text by
+			-- construction) and moves on.
+		require
+			queued: not classify_queue.is_empty
+		local
+			l_cmd: STRING_32
+			l_process: SIMPLE_ASYNC_PROCESS
+		do
+			discard_classify_worker
+			create l_cmd.make (300)
+			l_cmd.append_character ('%"')
+			l_cmd.append (executable_path)
+			l_cmd.append_string_general ("%" --classify-worker %"")
+			l_cmd.append (classify_queue.first.crop_path)
+			l_cmd.append_string_general ("%" %"")
+			l_cmd.append (classify_queue.first.verdict_path)
+			l_cmd.append_character ('%"')
+			create l_process.make
+			l_process.set_show_window (False)
+			l_process.start (l_cmd)
+			if l_process.is_started then
+				classify_worker := l_process
+			else
+				advance_classification (True)
+			end
+		end
+
+	harvest_classification
+			-- Read the verdict on the queue's head. Anything that
+			-- does not plainly say TEXT keeps the figure - the crop
+			-- was non-text by construction, so the lenient side is
+			-- the correct side (the spike answered ARTWORK, not
+			-- FIGURE, to artwork).
+		local
+			l_verdict: detachable STRING_32
+			l_accept: BOOLEAN
+		do
+			l_verdict := read_utf8 (classify_queue.first.verdict_path)
+			discard_classify_worker
+			l_accept := True
+			if attached l_verdict as al_verdict
+				and then trimmed_upper (al_verdict).starts_with ({STRING_32} "TEXT")
+			then
+				l_accept := False
+			end
+			advance_classification (l_accept)
+		end
+
+	advance_classification (a_accepted: BOOLEAN)
+			-- Retire the queue's head - kept or discarded - and move
+			-- to the next crop, or weave and append when done.
+		require
+			queued: not classify_queue.is_empty
+		local
+			l_weaver: OCR_MD_WEAVER
+		do
+			if a_accepted then
+				accepted_links.extend (classify_queue.first.link)
+			else
+				log ({STRING_32} "classifier rejected " + classify_queue.first.crop_path)
+				delete_file (classify_queue.first.crop_path)
+			end
+			delete_file (classify_queue.first.verdict_path)
+			classify_queue.start
+			classify_queue.remove
+			if classify_queue.is_empty then
+				create l_weaver
+				append_and_complete (l_weaver.woven (pending_text, accepted_links))
+			else
+				start_next_classify
+			end
+		end
+
+	boxes_path_for (a_index: INTEGER): STRING_32
+			-- Where the boxes worker writes this capture's word rects.
+		do
+			create Result.make_from_string (folder_prefix)
+			Result.append_string_general ("ocr_")
+			Result.append_string_general (padded (a_index))
+			Result.append_string_general (".boxes.txt")
+		end
+
+	images_folder: STRING_32
+			-- The transcript's figure folder, trailing separator
+			-- included.
+		do
+			create Result.make_from_string (folder_prefix)
+			Result.append_string_general ("images\")
+		end
+
+	image_stem_name: STRING_32
+			-- The current page image's file name without folder or
+			-- extension - the crops ride its identity.
+		local
+			i, j: INTEGER
+		do
+			create Result.make_from_string (current_image_path)
+			i := Result.last_index_of ('\', Result.count)
+			if i > 0 then
+				Result.remove_head (i)
+			end
+			j := Result.last_index_of ('.', Result.count)
+			if j > 1 then
+				Result.keep_head (j - 1)
+			end
+		end
+
+	trimmed_upper (a_text: READABLE_STRING_32): STRING_32
+			-- `a_text' without leading blanks, upper-cased.
+		do
+			create Result.make_from_string_general (a_text)
+			Result.left_adjust
+			Result.to_upper
+		end
+
+	discard_boxes_worker
+			-- Release the boxes process handle, if any.
+		do
+			if attached boxes_worker as al_boxes then
+				if al_boxes.is_started and then al_boxes.is_running then
+					if al_boxes.kill then
+						-- terminated
+					end
+				end
+				al_boxes.close
+			end
+			boxes_worker := Void
+		end
+
+	discard_classify_worker
+			-- Release the classifier process handle, if any.
+		do
+			if attached classify_worker as al_classifier then
+				if al_classifier.is_started and then al_classifier.is_running then
+					if al_classifier.kill then
+						-- terminated
+					end
+				end
+				al_classifier.close
+			end
+			classify_worker := Void
+		end
+
+	boxes_worker: detachable SIMPLE_ASYNC_PROCESS
+			-- The Windows OCR boxes process, while one runs.
+
+	classify_worker: detachable SIMPLE_ASYNC_PROCESS
+			-- The figure classifier process, while one runs.
+
+	boxes_path: STRING_32
+			-- Where the current capture's word boxes land.
+
+	boxes_wait_ticks: INTEGER
+			-- Ticks spent waiting for the boxes worker after the
+			-- model already finished.
+
+	Boxes_wait_limit: INTEGER = 40
+			-- Two seconds of grace at the 50 ms tick; beyond that the
+			-- page proceeds without figures.
+
+	pending_text: STRING_32
+			-- The model's Markdown, held while its figures classify.
+
+	classify_queue: ARRAYED_LIST [TUPLE [crop_path, verdict_path, link: STRING_32]]
+			-- Crops awaiting their one-word verdict, in page order.
+
+	accepted_links: ARRAYED_LIST [READABLE_STRING_32]
+			-- Links of the crops the classifier kept, in page order.
+
 feature {NONE} -- Implementation
 
 	discard_worker
@@ -613,10 +1009,11 @@ feature {NONE} -- Implementation
 	current_text_path: STRING_32
 
 	phase: INTEGER
-			-- `Phase_ready' or `Phase_ocr'.
+			-- `Phase_ready', `Phase_ocr' or `Phase_classify'.
 
 	Phase_ready: INTEGER = 0
 	Phase_ocr: INTEGER = 2
+	Phase_classify: INTEGER = 3
 
 invariant
 	error_attached: last_error /= Void

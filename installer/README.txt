@@ -4,6 +4,16 @@ Simple OCR Capture
 Capture a region of the screen, run it through a local OCR model, and append
 the text to a single file.
 
+New in 1.11.0: the progress strip now shows when the run started,
+the FIRST completion estimate (frozen the moment it exists), and how
+far the current projection has drifted from that first guess. The
+transcript can be written as Markdown, and - strictly opt-in, with a
+confirming dialog - the run can detect figures on each page, save
+them as PNGs in an images folder, and embed them in the Markdown
+where they occurred. Detection is deterministic (Windows OCR word
+mask + ink analysis of the saved page image); the AI model only
+answers one word per candidate - figure or text.
+
 New in 1.10.0: the region picker grows handles. A drag opens ADJUST
 mode - eight grab handles resize the box, its interior drags it
 whole, arrows nudge by a pixel (Shift+arrows resize), Enter or Apply

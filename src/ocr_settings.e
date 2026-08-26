@@ -85,6 +85,17 @@ feature -- Access: output
 	text_file_name: STRING_32
 			-- Name of the single file OCR text is appended to.
 
+	markdown_output: BOOLEAN
+			-- Write the transcript as Markdown (.md) instead of plain
+			-- text? Off by default: the proven pipeline is untouched
+			-- unless asked for.
+
+	extract_figures: BOOLEAN
+			-- Detect figures on each page and embed them in the
+			-- Markdown transcript? Strictly opt-in, and only
+			-- meaningful with `markdown_output' - embedding needs
+			-- Markdown to embed into.
+
 	save_text: BOOLEAN
 			-- Append recognized text to `text_file_name'?
 
@@ -261,6 +272,36 @@ feature -- Status report
 			Result.append (text_file_name)
 		end
 
+	transcript_file_name: STRING_32
+			-- The name actually written to: `text_file_name' as-is in
+			-- plain-text mode; with its ".txt" swapped for ".md" (or
+			-- ".md" appended) in Markdown mode. Derived, never stored:
+			-- the user's chosen name stays theirs.
+		do
+			create Result.make_from_string (text_file_name)
+			if markdown_output then
+				if Result.count >= 4 and then Result.as_lower.ends_with ({STRING_32} ".txt") then
+					Result := Result.substring (1, Result.count - 4) + {STRING_32} ".md"
+				elseif not Result.as_lower.ends_with ({STRING_32} ".md") then
+					Result := Result + {STRING_32} ".md"
+				end
+			end
+		ensure
+			markdown_named: markdown_output implies Result.as_lower.ends_with ({STRING_32} ".md")
+			plain_untouched: not markdown_output implies Result.same_string (text_file_name)
+		end
+
+	transcript_file_path: STRING_32
+			-- Full path of the file the transcript is appended to,
+			-- honouring `markdown_output'.
+		do
+			create Result.make_from_string (output_folder)
+			if not Result.is_empty and then Result.item (Result.count) /= '\' then
+				Result.append_character ('\')
+			end
+			Result.append (transcript_file_name)
+		end
+
 feature -- Element change
 
 	set_region (a_x, a_y, a_width, a_height: INTEGER)
@@ -396,6 +437,29 @@ feature -- Element change
 			create text_file_name.make_from_string_general (a_name)
 		ensure
 			set: text_file_name.same_string_general (a_name)
+		end
+
+	set_markdown_output (a_flag: BOOLEAN)
+		do
+			markdown_output := a_flag
+			if not a_flag then
+					-- figures cannot outlive the Markdown they embed into
+				extract_figures := False
+			end
+		ensure
+			set: markdown_output = a_flag
+			coupled: not a_flag implies not extract_figures
+		end
+
+	set_extract_figures (a_flag: BOOLEAN)
+		do
+			extract_figures := a_flag
+			if a_flag then
+				markdown_output := True
+			end
+		ensure
+			set: extract_figures = a_flag
+			coupled: a_flag implies markdown_output
 		end
 
 	set_save_text (a_flag: BOOLEAN)
@@ -669,6 +733,8 @@ feature {NONE} -- Persistence implementation
 			Result.append ("  %"save_text%": " + save_text.out.as_lower + ",%N")
 			Result.append ("  %"save_image%": " + save_image.out.as_lower + ",%N")
 			Result.append ("  %"add_separators%": " + add_separators.out.as_lower + ",%N")
+			Result.append ("  %"markdown_output%": " + markdown_output.out.as_lower + ",%N")
+			Result.append ("  %"extract_figures%": " + extract_figures.out.as_lower + ",%N")
 			Result.append ("  %"image_format%": " + u.quoted (image_format) + ",%N")
 			Result.append ("  %"move_to_drive%": " + u.quoted (move_to_drive) + ",%N")
 			Result.append ("  %"hotkey_modifiers%": " + hotkey_modifiers.out + ",%N")
@@ -714,6 +780,13 @@ feature {NONE} -- Persistence implementation
 			save_text := boolean_from (a_obj, "save_text", save_text)
 			save_image := boolean_from (a_obj, "save_image", save_image)
 			add_separators := boolean_from (a_obj, "add_separators", add_separators)
+			markdown_output := boolean_from (a_obj, "markdown_output", markdown_output)
+			extract_figures := boolean_from (a_obj, "extract_figures", extract_figures)
+			if extract_figures and not markdown_output then
+					-- Repair rather than honour: figures without Markdown
+					-- have nowhere to embed.
+				extract_figures := False
+			end
 			if attached a_obj.string_item ({STRING_32} "image_format") as al_s then
 				if al_s.same_string_general ("png") or al_s.same_string_general ("bmp") then
 					image_format := narrowed (al_s)
@@ -828,6 +901,17 @@ feature -- Constants
 	Page_label_prompt: STRING_32 = "Read the page number or page range shown in this image. Output only what is written, nothing else."
 			-- Used for the page indicator, where the general prompt's "transcribe
 			-- everything" invites the model to describe the surrounding chrome.
+
+	Markdown_prompt: STRING_32 = "Transcribe this page to GitHub-flavored Markdown exactly as it appears, verbatim - headings, emphasis, lists and tables preserved. Where a figure, photograph, chart, map or illustration appears, insert a line containing only ![figure](figure) at its place in the reading order. Output only the transcription, nothing else."
+			-- The Markdown-mode page prompt. Spiked 2026-08-26 against a real
+			-- captured page: clean verbatim Markdown, and - the case that
+			-- matters - NO figure marker hallucinated on a text-only page.
+
+	Classifier_prompt: STRING_32 = "Look at this image. Answer with exactly one word: FIGURE if it shows a photograph, chart, diagram, map, graph, artwork or illustration; TEXT if it shows only written text or plain decoration."
+			-- The figure/text crop classifier. Spiked: a text page answers
+			-- TEXT; artwork answered ARTWORK - so the caller treats any answer
+			-- NOT starting with TEXT as a figure (candidates are already
+			-- non-text regions by construction, so the lenient side is right).
 
 	Minimum_advance_delay_ms: INTEGER = 500
 			-- Floor for the settle time. Below this the capture races the

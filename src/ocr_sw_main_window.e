@@ -239,6 +239,8 @@ feature -- Settings round trip
 			check_save_text.set_checked (settings.save_text)
 			check_save_image.set_checked (settings.save_image)
 			check_separators.set_checked (settings.add_separators)
+			check_markdown.set_checked (settings.markdown_output)
+			check_figures.set_checked (settings.extract_figures)
 			check_show_strip.set_checked (settings.show_strip)
 			check_show_thumb.set_checked (settings.show_thumbnail)
 			check_ctrl.set_checked (settings.hotkey_modifiers.bit_and ({OCR_HOTKEY}.Mod_control) /= 0)
@@ -280,6 +282,8 @@ feature -- Settings round trip
 				settings.set_save_text (check_save_text.is_checked)
 				settings.set_save_image (check_save_image.is_checked)
 				settings.set_add_separators (check_separators.is_checked)
+				settings.set_markdown_output (check_markdown.is_checked)
+				settings.set_extract_figures (check_figures.is_checked)
 				settings.set_show_strip (check_show_strip.is_checked)
 				settings.set_show_thumbnail (check_show_thumb.is_checked)
 				if not field_endpoint.text.is_empty then
@@ -429,6 +433,13 @@ feature {NONE} -- Building
 			Result.put (check_save_text)
 			Result.put (check_save_image)
 			Result.put (check_separators)
+			create check_markdown.make ("Write the transcript as Markdown (.md)", False, Void)
+			check_markdown.set_on_change (agent on_markdown_toggle)
+			create check_figures.make ("Extract figures with AI into the Markdown transcript", False, Void)
+			check_figures.set_on_change (agent on_figures_toggle)
+			Result.put (check_markdown)
+			Result.put (check_figures)
+			Result.put ((create {SW_LABEL}.make_ui ("Figures: prose pages cost nothing extra; each detected figure adds a few seconds. Off unless this book has them.")).as_muted)
 			create combo_format.make
 			combo_format.add_option ("png")
 			combo_format.add_option ("bmp")
@@ -578,14 +589,64 @@ feature {NONE} -- Actions
 			col.put (create {SW_SEPARATOR}.make_labeled ("AI models"))
 			col.put (labelled ("OCR model", create {SW_LABEL}.make_mono (settings.model)))
 			col.put (labelled ("Endpoint", create {SW_LABEL}.make_mono (settings.endpoint)))
-			col.put (labelled ("Page labels", create {SW_LABEL}.make_mono ("Windows OCR (winocr_label.ps1)")))
-			col.put ((create {SW_LABEL}.make_ui ("Page labels fall back to the OCR model when the script is missing.")).as_muted)
+			col.put (labelled ("Page labels", create {SW_LABEL}.make_mono ("the OCR model (indicator prompt)")))
+			col.put (labelled ("Figure detect", create {SW_LABEL}.make_mono ("Windows OCR text mask + model confirm")))
 			col.put (create {SW_SEPARATOR}.make_labeled ("Built on"))
 			col.put (create {SW_LABEL}.make_body ("simple_widgets over simple_shell and cairo - pure Eiffel and Win32: no Vision2, no runtime, no redistributable."))
 			col.put (create {SW_SEPARATOR}.make_labeled ("If the region picker is ever stuck"))
 			col.put (create {SW_LABEL}.make_body ("Esc, right-click or Alt+F4 cancels a drag. Held for five seconds, Esc quits the application itself - the picker can never take the session with it."))
 			col.put ((create {SW_LABEL}.make_ui ("github.com/simple-eiffel/simple_ocr_capture")).as_muted)
 			window.show_sheet (col, 600.0)
+		end
+
+	on_markdown_toggle
+			-- Markdown off takes figures with it: they have nowhere
+			-- to embed without it.
+		do
+			if not is_loading then
+				if not check_markdown.is_checked and then check_figures.is_checked then
+					is_loading := True
+					check_figures.set_checked (False)
+					is_loading := False
+				end
+				store_to_settings
+				report ({STRING_32} "Transcript file: " + settings.transcript_file_name)
+			end
+		end
+
+	on_figures_toggle
+			-- Ticking figures is a deliberate act and gets a
+			-- deliberate confirm: the box unticks until the dialog's
+			-- Yes re-ticks it (with Markdown alongside). Unticking
+			-- needs no ceremony.
+		local
+			d: SW_DIALOG
+		do
+			if not is_loading then
+				if check_figures.is_checked then
+					is_loading := True
+					check_figures.set_checked (False)
+					is_loading := False
+					create d.make ({SW_DIALOG}.Kind_warning, "Extract figures from this book?",
+						{STRING_32} "Most books need no figure extraction - leave this OFF unless this book carries photographs, charts, maps or illustrations you want captured.%N%NWhat it costs: pages of plain prose add nothing (detection rides under the OCR you already wait for); each detected figure adds a few seconds for its confirmation.%N%NWhat you get: figures saved as PNG files in an images folder beside the transcript, embedded in the Markdown where they occurred.%N%NThe Markdown transcript is required and will be switched on with it.")
+					d.add_button ("No, leave it off", False, Void)
+					d.add_button ("Yes, extract figures", True, agent confirm_figures_on)
+					window.show_dialog (d)
+				else
+					store_to_settings
+				end
+			end
+		end
+
+	confirm_figures_on
+			-- The dialog's Yes: figures on, Markdown with it.
+		do
+			is_loading := True
+			check_markdown.set_checked (True)
+			check_figures.set_checked (True)
+			is_loading := False
+			store_to_settings
+			report ({STRING_32} "Figure extraction ON - transcript: " + settings.transcript_file_name)
 		end
 
 	on_set_region
@@ -1175,6 +1236,10 @@ feature {NONE} -- State
 	check_save_text: SW_CHECK_BOX attribute create Result.make ("", False, Void) end
 	check_save_image: SW_CHECK_BOX attribute create Result.make ("", False, Void) end
 	check_separators: SW_CHECK_BOX attribute create Result.make ("", False, Void) end
+
+	check_markdown: SW_CHECK_BOX attribute create Result.make ("", False, Void) end
+
+	check_figures: SW_CHECK_BOX attribute create Result.make ("", False, Void) end
 	check_show_strip: SW_CHECK_BOX attribute create Result.make ("", False, Void) end
 	check_show_thumb: SW_CHECK_BOX attribute create Result.make ("", False, Void) end
 	check_ctrl: SW_CHECK_BOX attribute create Result.make ("", False, Void) end

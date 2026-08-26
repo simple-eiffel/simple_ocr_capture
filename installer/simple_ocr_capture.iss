@@ -19,7 +19,7 @@
 ; ============================================================================
 
 #define AppName        "Simple OCR Capture"
-#define AppVersion     "1.10.0"
+#define AppVersion     "1.11.0"
 #define AppPublisher   "Larry Rix"
 #define AppExeName     "simple_ocr_capture.exe"
 #define SourceExe      "..\EIFGENs\ocr_capture\F_code\simple_ocr_capture.exe"
@@ -59,6 +59,7 @@ Name: "desktopicon"; Description: "Create a &desktop shortcut"; GroupDescription
 Source: "{#SourceExe}"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\EIFGENs\ocr_capture\F_code\cairo.dll"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\ocr_cairo\winocr_label.ps1"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\ocr_cairo\winocr_boxes.ps1"; DestDir: "{app}"; Flags: ignoreversion
 Source: "README.txt";   DestDir: "{app}"; Flags: ignoreversion isreadme
 
 [Icons]

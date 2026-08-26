@@ -74,11 +74,23 @@ feature -- Conversion
 	flattened (a_text: READABLE_STRING_32): STRING_32
 			-- `a_text' with every run of whitespace reduced to one space, so a
 			-- line rewrapped between two reads is not mistaken for new content.
+			-- Markdown IMAGE lines (first non-blank characters "![") are
+			-- dropped whole first: their link targets carry per-capture file
+			-- names, which would read as fresh content on every re-read of
+			-- the same screen.
 		local
 			l_space: BOOLEAN
+			l_kept: STRING_32
 		do
-			create Result.make (a_text.count)
-			across a_text as ic_char loop
+			create l_kept.make (a_text.count)
+			across a_text.split ('%N') as ic_line loop
+				if not is_image_line (ic_line) then
+					l_kept.append (ic_line)
+					l_kept.append_character ('%N')
+				end
+			end
+			create Result.make (l_kept.count)
+			across l_kept as ic_char loop
 				if is_blank (ic_char.item) then
 					if not l_space and then not Result.is_empty then
 						Result.append_character (' ')
@@ -90,6 +102,22 @@ feature -- Conversion
 				end
 			end
 			Result.right_adjust
+		end
+
+	is_image_line (a_line: READABLE_STRING_32): BOOLEAN
+			-- Does `a_line' hold a Markdown image link - its first
+			-- non-blank characters being "!["?
+		local
+			i: INTEGER
+		do
+			from
+				i := 1
+			until
+				i > a_line.count or else (a_line.item (i) /= ' ' and a_line.item (i) /= '%T')
+			loop
+				i := i + 1
+			end
+			Result := i < a_line.count and then a_line.item (i) = '!' and then a_line.item (i + 1) = '['
 		end
 
 feature {NONE} -- Implementation

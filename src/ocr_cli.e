@@ -41,6 +41,10 @@ feature {NONE} -- Initialization
 				run_shot (l_args)
 			elseif l_args.argument_count >= 1 and then l_args.argument (1).same_string_general ("--label-worker") then
 				run_label_worker (l_args)
+			elseif l_args.argument_count >= 1 and then l_args.argument (1).same_string_general ("--classify-worker") then
+				run_classify_worker (l_args)
+			elseif l_args.argument_count >= 1 and then l_args.argument (1).same_string_general ("--figures") then
+				run_figures_probe (l_args)
 			elseif l_args.argument_count >= 1 and then l_args.argument (1).same_string_general ("--rescan") then
 				run_rescan (l_args)
 			elseif l_args.argument_count >= 1 and then l_args.argument (1).same_string_general ("--image-name") then
@@ -476,6 +480,65 @@ feature {NONE} -- Modes
 			end
 		end
 
+	run_classify_worker (a_args: ARGUMENTS_32)
+			-- Classify the crop named by argument 2 - figure or text -
+			-- into the file named by argument 3. The figure pipeline's
+			-- one-word question, on the same machinery as the label
+			-- worker: own prompt, tiny prediction budget.
+		local
+			l_settings: OCR_SETTINGS
+			l_engine: OCR_ENGINE
+		do
+			if a_args.argument_count < 3 then
+				io.error.put_string ("usage: --classify-worker <image> <out-text>%N")
+				set_exit_code (1)
+			else
+				create l_settings
+				l_settings.load
+				l_settings.set_ocr_prompt ({OCR_SETTINGS}.Classifier_prompt)
+				l_settings.set_num_predict (Label_prediction_tokens)
+				create l_engine.make
+
+				if l_engine.recognize (a_args.argument (2), l_settings) then
+					if write_text (a_args.argument (3), l_engine.last_text) then
+							-- written
+					else
+						set_exit_code (1)
+					end
+				else
+					if not write_text (a_args.argument (3), {STRING_32} "[OCR FAILED] " + l_engine.last_error) then
+						set_exit_code (1)
+					end
+					set_exit_code (1)
+				end
+			end
+		end
+
+	run_figures_probe (a_args: ARGUMENTS_32)
+			-- Diagnostic: print the figure candidates for a page image
+			-- and its winocr_boxes.ps1 output - the detector's law
+			-- exercised on real pages without a run.
+		local
+			l_finder: OCR_FIGURE_FINDER
+			l_rects: ARRAYED_LIST [TUPLE [x, y, w, h: INTEGER]]
+		do
+			if a_args.argument_count < 3 then
+				io.error.put_string ("usage: --figures <image> <boxes-file>%N")
+				set_exit_code (1)
+			else
+				create l_finder.make
+				l_rects := l_finder.find (a_args.argument (2), a_args.argument (3))
+				io.put_string ("candidates: " + l_rects.count.out + "%N")
+				across
+					l_rects as ic_rect
+				loop
+					io.put_string (ic_rect.x.out + " " + ic_rect.y.out + " "
+						+ ic_rect.w.out + " " + ic_rect.h.out + "%N")
+				end
+				set_exit_code (0)
+			end
+		end
+
 	run_rescan (a_args: ARGUMENTS_32)
 			-- Re-OCR each image named on the command line, writing the text
 			-- beside it as "<image>.rescan.txt".
@@ -659,6 +722,11 @@ feature {NONE} -- Modes
 			else
 				create l_settings
 				l_settings.load
+				if l_settings.markdown_output then
+						-- Markdown mode swaps in the Markdown prompt; the
+						-- user's own prompt keeps ruling plain-text mode.
+					l_settings.set_ocr_prompt ({OCR_SETTINGS}.Markdown_prompt)
+				end
 				create l_engine.make
 
 				if l_engine.recognize (a_args.argument (2), l_settings) then

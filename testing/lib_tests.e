@@ -146,6 +146,58 @@ feature -- Test: OCR_TEXT_COMPARE
 				l_cmp.agreement_percent ("abcdefghXY", "abcdefghij"))
 		end
 
+feature -- Test: Markdown-mode laws
+
+	test_compare_ignores_markdown_image_lines
+			-- Two reads of the same screen whose only difference is
+			-- the per-capture figure link must count as the SAME
+			-- screen - or every figure page would re-append forever.
+		note
+			testing: "covers/{OCR_TEXT_COMPARE}.is_same_screen"
+		local
+			c: OCR_TEXT_COMPARE
+		do
+			create c
+			assert_true ("differing links are jitter, not progress",
+				c.is_same_screen (
+					{STRING_32} "Alpha beta gamma delta.%N![Figure](images/p1_fig1.png)%NEpsilon zeta.",
+					{STRING_32} "Alpha beta gamma delta.%N![Figure](images/p7_fig1.png)%NEpsilon zeta."))
+			assert_false ("real new text still reads as a new screen",
+				c.is_same_screen (
+					{STRING_32} "Alpha beta gamma delta epsilon zeta.",
+					{STRING_32} "Entirely different words on this page now."))
+		end
+
+	test_settings_markdown_transcript_name
+			-- Markdown mode renames the transcript by extension swap;
+			-- plain mode leaves the user's name untouched; figures
+			-- and Markdown stay coupled both ways.
+		note
+			testing: "covers/{OCR_SETTINGS}.transcript_file_name"
+		local
+			st: OCR_SETTINGS
+		do
+			create st
+			assert_strings_equal ("plain mode: the name as given",
+				{STRING_32} "ocr_capture.txt", st.transcript_file_name)
+			st.set_markdown_output (True)
+			assert_strings_equal ("markdown mode: .txt becomes .md",
+				{STRING_32} "ocr_capture.md", st.transcript_file_name)
+			st.set_text_file_name ("traced.txt")
+			assert_strings_equal ("a custom name swaps the same way",
+				{STRING_32} "traced.md", st.transcript_file_name)
+			st.set_text_file_name ("notes.md")
+			assert_strings_equal ("an .md name is already right",
+				{STRING_32} "notes.md", st.transcript_file_name)
+			st.set_markdown_output (False)
+			assert_strings_equal ("plain mode again: untouched",
+				{STRING_32} "notes.md", st.transcript_file_name)
+			st.set_extract_figures (True)
+			assert_true ("figures pull markdown on", st.markdown_output)
+			st.set_markdown_output (False)
+			assert_false ("markdown off takes figures with it", st.extract_figures)
+		end
+
 feature -- Test: OCR_IMAGE_NAME
 
 	test_image_name_from_indicator
@@ -193,6 +245,170 @@ feature -- Test: OCR_JSON_UTIL
 		do
 			create u
 			assert_true ("escaped", u.quoted ("say %"hi%"").has_substring ("\%""))
+		end
+
+feature -- Test: OCR_FIGURE_FINDER (grid laws, bare arrays)
+
+	test_finder_keeps_the_blob_drops_the_speck
+			-- A 12x8 grid: a 4x4 ink blob is a figure candidate (its
+			-- one-step dilation makes it 6x6); a far-away 1-cell
+			-- speck dilates to 3x3 and dies on Min_extent_cells.
+		note
+			testing: "covers/{OCR_FIGURE_FINDER}.candidates_from_grids"
+		local
+			f: OCR_FIGURE_FINDER
+			ink, text_mask: ARRAY [BOOLEAN]
+			r: ARRAYED_LIST [TUPLE [x, y, w, h: INTEGER]]
+			row, col: INTEGER
+		do
+			create f.make
+			create ink.make_filled (False, 1, 12 * 8)
+			create text_mask.make_filled (False, 1, 12 * 8)
+			from
+				row := 2
+			until
+				row > 5
+			loop
+				from
+					col := 2
+				until
+					col > 5
+				loop
+					ink [(row - 1) * 12 + col] := True
+					col := col + 1
+				end
+				row := row + 1
+			end
+			ink [(7 - 1) * 12 + 11] := True
+			r := f.candidates_from_grids (12, 8, ink, text_mask)
+			assert_integers_equal ("one candidate - the blob; the speck filtered", 1, r.count)
+			assert_integers_equal ("dilated blob starts at cell 1 -> px 0", 0, r.first.x)
+			assert_integers_equal ("and spans 6 cells -> 96 px", 96, r.first.w)
+			assert_integers_equal ("square", 96, r.first.h)
+		end
+
+	test_finder_text_mask_wins
+			-- The same ink under the text mask is prose, not a figure.
+		note
+			testing: "covers/{OCR_FIGURE_FINDER}.candidates_from_grids"
+		local
+			f: OCR_FIGURE_FINDER
+			ink, text_mask: ARRAY [BOOLEAN]
+			row, col: INTEGER
+		do
+			create f.make
+			create ink.make_filled (False, 1, 12 * 8)
+			create text_mask.make_filled (False, 1, 12 * 8)
+			from
+				row := 2
+			until
+				row > 5
+			loop
+				from
+					col := 2
+				until
+					col > 5
+				loop
+					ink [(row - 1) * 12 + col] := True
+					text_mask [(row - 1) * 12 + col] := True
+					col := col + 1
+				end
+				row := row + 1
+			end
+			assert_integers_equal ("masked ink is not a candidate", 0,
+				f.candidates_from_grids (12, 8, ink, text_mask).count)
+		end
+
+feature -- Test: OCR_MD_WEAVER (marker pairing)
+
+	test_weaver_pairs_extras_and_leftovers
+		note
+			testing: "covers/{OCR_MD_WEAVER}.woven"
+		local
+			w: OCR_MD_WEAVER
+			links: ARRAYED_LIST [READABLE_STRING_32]
+		do
+			create w
+			create links.make (2)
+			links.extend ({STRING_32} "images/p1_fig1.png")
+			links.extend ({STRING_32} "images/p1_fig2.png")
+			assert_strings_equal ("marker replaced in place, extra appended",
+				{STRING_32} "alpha%N![Figure](images/p1_fig1.png)%Nbeta%N%N![Figure](images/p1_fig2.png)",
+				w.woven ({STRING_32} "alpha%N![figure](figure)%Nbeta", links))
+			create links.make (1)
+			links.extend ({STRING_32} "images/p2_fig1.png")
+			assert_strings_equal ("leftover marker dropped whole",
+				{STRING_32} "![Figure](images/p2_fig1.png)%Nmiddle",
+				w.woven ({STRING_32} "![figure](figure)%Nmiddle%N![figure](figure)", links))
+			create links.make (0)
+			assert_strings_equal ("no links: markers vanish, prose stands",
+				{STRING_32} "only%Nprose",
+				w.woven ({STRING_32} "only%N![figure](figure)%Nprose", links))
+		end
+
+feature -- Test: OCR_RUN_METRICS (first-guess freeze and drift)
+
+	test_metrics_freezes_first_estimate
+			-- The first computable ETA is frozen and never re-frozen.
+		note
+			testing: "covers/{OCR_RUN_METRICS}.note_capture_at"
+		local
+			m: OCR_RUN_METRICS
+		do
+			create m.make
+			m.note_start
+			assert_false ("nothing frozen at start", m.has_initial_estimate)
+			m.note_capture_at ("Page 10 of 100", 10)
+			assert_false ("one sample cannot project", m.has_initial_estimate)
+			m.note_capture_at ("Page 12 of 100", 70)
+				-- 2 pages over 60s: 2.0 pg/min; 88 left -> 44 minutes
+			assert_true ("the first ETA freezes the moment it exists", m.has_initial_estimate)
+			assert_integers_equal ("frozen at 44 minutes", 44, m.initial_eta_minutes)
+			assert_integers_equal ("on pace at the freeze", 0, m.drift_minutes)
+			m.note_capture_at ("Page 14 of 100", 130)
+			assert_integers_equal ("still frozen at 44", 44, m.initial_eta_minutes)
+			assert_true ("started stamp reads back", not m.started_display.is_empty)
+		end
+
+	test_metrics_drift_runs_late
+			-- A slowdown moves the projected finish past the first
+			-- guess; drift reports the gap in minutes, positive.
+		note
+			testing: "covers/{OCR_RUN_METRICS}.drift_minutes"
+		local
+			m: OCR_RUN_METRICS
+		do
+			create m.make
+			m.note_start
+			m.note_capture_at ("Page 10 of 100", 10)
+			m.note_capture_at ("Page 12 of 100", 70)
+				-- frozen: 44 min at 70s -> finish at 2710s
+			m.note_capture_at ("Page 14 of 100", 130)
+				-- window 120s / 4 pages: still 2.0 pg/min -> ETA 43 at 130s
+			assert_integers_equal ("steady pace drifts nothing", 0, m.drift_minutes)
+			m.note_capture_at ("Page 15 of 100", 250)
+				-- window 240s / 5 pages: 1.25 pg/min -> ETA 68 at 250s
+				-- projected 4330s vs frozen 2710s = +27 minutes late
+			assert_integers_equal ("the slowdown shows as +27", 27, m.drift_minutes)
+		end
+
+	test_metrics_drift_beats_the_guess
+			-- A speedup pulls the finish ahead of the first guess;
+			-- drift goes negative.
+		note
+			testing: "covers/{OCR_RUN_METRICS}.drift_minutes"
+		local
+			m: OCR_RUN_METRICS
+		do
+			create m.make
+			m.note_start
+			m.note_capture_at ("Page 10 of 100", 60)
+			m.note_capture_at ("Page 12 of 100", 120)
+				-- frozen: 44 min at 120s -> finish at 2760s
+			m.note_capture_at ("Page 20 of 100", 180)
+				-- window 120s / 10 pages: 5.0 pg/min -> ETA 16 at 180s
+				-- projected 1140s vs frozen 2760s = -27 minutes
+			assert_integers_equal ("the speedup shows as -27", -27, m.drift_minutes)
 		end
 
 feature -- Test: OCR_IMAGE_STORE

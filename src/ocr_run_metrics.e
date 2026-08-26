@@ -133,9 +133,14 @@ feature -- Recording
 			total := 0
 			has_position := False
 			has_total := False
+			has_initial_estimate := False
+			initial_eta_minutes := 0
+			initial_elapsed_seconds := 0
+			create initial_finish_display.make_empty
 			samples.wipe_out
 		ensure
 			reset: captures = 0
+			no_first_guess: not has_initial_estimate
 		end
 
 	note_capture (a_label: READABLE_STRING_GENERAL)
@@ -179,8 +184,21 @@ feature -- Recording
 					has_pending := True
 				end
 			end
+				-- The FIRST projectable finish is frozen the moment it
+				-- exists - warts included, because "how good was the
+				-- first guess" is exactly the question the strip will
+				-- be answering for the rest of the run.
+			if not has_initial_estimate and then has_eta then
+				has_initial_estimate := True
+				initial_eta_minutes := eta_minutes
+				initial_elapsed_seconds := a_seconds
+				initial_finish_display := finish_clock
+			end
 		ensure
 			counted: captures = old captures + 1
+			first_guess_sticks: old has_initial_estimate implies
+				(initial_eta_minutes = old initial_eta_minutes
+				and initial_elapsed_seconds = old initial_elapsed_seconds)
 		end
 
 	note_pause
@@ -329,6 +347,27 @@ feature -- Measurement
 					Result.append_character ('%N')
 					Result.append_string_general ("No ETA - Standby ...")
 				end
+				Result.append_character ('%N')
+				Result.append_string_general ("started ")
+				Result.append (started_display)
+				if has_initial_estimate then
+					Result.append_character ('%N')
+					Result.append_string_general ("1st ETA ")
+					Result.append (initial_finish_display)
+					if has_eta then
+						if drift_minutes > 0 then
+							Result.append_string_general ("  +")
+							Result.append_string_general (drift_minutes.out)
+							Result.append_character ('m')
+						elseif drift_minutes < 0 then
+							Result.append_string_general ("  ")
+							Result.append_string_general (drift_minutes.out)
+							Result.append_character ('m')
+						else
+							Result.append_string_general ("  on pace")
+						end
+					end
+				end
 			end
 		end
 
@@ -363,6 +402,52 @@ feature -- Measurement
 				create l_when.make_now
 				l_when.minute_add (eta_minutes)
 				Result.append_string_general (clock_of (l_when))
+			end
+		end
+
+	started_display: STRING_32
+			-- When the run began, as "Aug 26 7:58 AM".
+		do
+			create Result.make (20)
+			Result.append_string_general (month_short (start_time.month))
+			Result.append_character (' ')
+			Result.append_string_general (start_time.day.out)
+			Result.append_character (' ')
+			Result.append_string_general (clock_of (start_time))
+		ensure
+			non_empty: not Result.is_empty
+		end
+
+	has_initial_estimate: BOOLEAN
+			-- Has the first projectable finish been frozen yet?
+
+	initial_eta_minutes: INTEGER
+			-- The first ETA the run could compute, frozen at the
+			-- moment `has_eta' first turned True.
+
+	initial_finish_display: STRING_32
+			-- The wall-clock finish that first estimate named, frozen.
+		attribute
+			create Result.make_empty
+		end
+
+	drift_minutes: INTEGER
+			-- How far the CURRENT projected finish has moved from the
+			-- frozen first one: positive = running late, negative =
+			-- beating the guess, zero = on pace. Meaningful when
+			-- `has_initial_estimate' and `has_eta'. Pure arithmetic
+			-- on capture seconds, so the assault drives it with
+			-- injected times and no clock.
+		local
+			l_delta: INTEGER
+		do
+			if has_initial_estimate and then has_eta then
+				l_delta := (last_capture_seconds + eta_minutes * 60)
+					- (initial_elapsed_seconds + initial_eta_minutes * 60)
+				Result := l_delta.abs // 60
+				if l_delta < 0 then
+					Result := -Result
+				end
 			end
 		end
 
@@ -589,6 +674,44 @@ feature {NONE} -- Implementation
 	paused_seconds: INTEGER
 	pause_started_raw: INTEGER
 	is_paused: BOOLEAN
+
+	initial_elapsed_seconds: INTEGER
+			-- Elapsed seconds at the moment the first ETA was frozen.
+
+	month_short (a_month: INTEGER): STRING_8
+			-- Three-letter month name.
+		require
+			in_year: a_month >= 1 and a_month <= 12
+		do
+			inspect a_month
+			when 1 then
+				Result := "Jan"
+			when 2 then
+				Result := "Feb"
+			when 3 then
+				Result := "Mar"
+			when 4 then
+				Result := "Apr"
+			when 5 then
+				Result := "May"
+			when 6 then
+				Result := "Jun"
+			when 7 then
+				Result := "Jul"
+			when 8 then
+				Result := "Aug"
+			when 9 then
+				Result := "Sep"
+			when 10 then
+				Result := "Oct"
+			when 11 then
+				Result := "Nov"
+			else
+				Result := "Dec"
+			end
+		ensure
+			three_letters: Result.count = 3
+		end
 
 feature -- Constants
 

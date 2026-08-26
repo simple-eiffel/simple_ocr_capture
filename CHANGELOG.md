@@ -6,6 +6,52 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [1.11.0] - 2026-08-26 — figures, Markdown, and an honest clock
+
+Three asks in one release: the strip tells the WHOLE time story, the
+transcript can be Markdown, and — strictly opt-in — the run can
+detect figures on the page, save them as PNGs, and embed them in the
+Markdown where they occurred.
+
+### Added
+
+- **Strip timing lines**: "started Aug 26 7:58 AM", and once the
+  first ETA exists it is FROZEN — "1st ETA 10:04 PM  +8m" tracks how
+  the projection drifts against that first guess for the rest of the
+  run (+late / -early / on pace). Pure arithmetic on capture times,
+  assaulted with injected seconds.
+- **Markdown transcript** (Output tab, off by default): the model's
+  native Markdown is let through (the plain-text prompt deliberately
+  suppressed it), the transcript becomes `<name>.md` (the stored
+  name is never touched), and capture headers become #### headings.
+- **Figure extraction** (Output tab, off by default, confirmed by a
+  modal when switched on): while the model transcribes, Windows OCR
+  builds a full-page word mask (winocr_boxes.ps1 — free, it rides
+  under the model's seconds); whatever is inky OUTSIDE the mask,
+  big enough, and FILLED enough becomes a candidate; each candidate
+  is cropped from the already-saved page PNG into `images/` and the
+  model answers one word — figure or text; kept figures are woven
+  into the Markdown at the model's own in-flow figure markers.
+  NO model is ever asked for coordinates (through Ollama a vision
+  model's coordinate space is not trustworthy) — geometry is
+  deterministic, the AI only classifies.
+- `--figures <image> <boxes>` CLI probe: the detector's verdict on
+  any page, without a run.
+
+### Proven against real pages before shipping
+
+- A real prose page: ZERO candidates. A second real page produced
+  one candidate — inline Hebrew glyphs Windows OCR cannot read —
+  and the classifier rejected it as TEXT: the two layers defend
+  exactly as designed. A synthetic text-figure-text page: one
+  candidate, tight on the artwork. The fill law exists because the
+  first probe returned the page frame as a near-page-sized
+  "candidate"; a figure fills its box, a frame does not.
+- The retry dedup compares the RAW model text (figure links carry
+  per-capture names); the same-screen comparator drops Markdown
+  image lines for the same reason. Tests 75/75.
+
+
 ## [1.10.0] - 2026-08-26 — the region picker grows handles
 
 Setting the big text box no longer demands one long, perfect drag.
@@ -291,6 +337,7 @@ not kept; the dates are those of the published installer artifacts.
 | 1.1.0 | 2026-08-08 |
 | 1.0.0 | 2026-08-06 |
 
+[1.11.0]: https://github.com/simple-eiffel/simple_ocr_capture/compare/v1.10.0...v1.11.0
 [1.10.0]: https://github.com/simple-eiffel/simple_ocr_capture/compare/v1.9.0...v1.10.0
 [1.9.0]: https://github.com/simple-eiffel/simple_ocr_capture/compare/v1.8.0...v1.9.0
 [1.8.0]: https://github.com/simple-eiffel/simple_ocr_capture/compare/v1.7.0...v1.8.0
