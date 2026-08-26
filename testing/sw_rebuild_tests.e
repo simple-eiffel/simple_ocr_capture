@@ -31,6 +31,79 @@ feature -- Selector band law
 			assert ("the fence is exact", s.is_usable_band (3, 3) and not s.is_usable_band (2, 3))
 		end
 
+feature -- Selector handle law (adjust mode, bare numbers)
+
+	test_handle_index_answers_every_grab_point
+			-- The box (100, 100, 200, 100): corners outrank middles,
+			-- handles outrank the interior, outside answers nothing.
+		local
+			s: OCR_SW_SELECTOR
+		do
+			create s.make
+			assert_integers_equal ("top-left corner", 1, s.handle_index_at (100, 100, 100, 100, 200, 100))
+			assert_integers_equal ("top-right corner", 3, s.handle_index_at (300, 100, 100, 100, 200, 100))
+			assert_integers_equal ("bottom-right corner", 5, s.handle_index_at (300, 200, 100, 100, 200, 100))
+			assert_integers_equal ("bottom-left corner", 7, s.handle_index_at (100, 200, 100, 100, 200, 100))
+			assert_integers_equal ("top middle", 2, s.handle_index_at (200, 100, 100, 100, 200, 100))
+			assert_integers_equal ("right middle", 4, s.handle_index_at (300, 150, 100, 100, 200, 100))
+			assert_integers_equal ("bottom middle", 6, s.handle_index_at (200, 200, 100, 100, 200, 100))
+			assert_integers_equal ("left middle", 8, s.handle_index_at (100, 150, 100, 100, 200, 100))
+			assert_integers_equal ("the interior moves the box", 9, s.handle_index_at (180, 160, 100, 100, 200, 100))
+			assert_integers_equal ("outside answers nothing", 0, s.handle_index_at (50, 50, 100, 100, 200, 100))
+			assert_integers_equal ("the catch square is generous",
+				1, s.handle_index_at (100 + s.Handle_grasp, 100 + s.Handle_grasp, 100, 100, 200, 100))
+			assert_integers_equal ("but exactly bounded",
+				9, s.handle_index_at (100 + s.Handle_grasp + 1, 100 + s.Handle_grasp + 1, 100, 100, 200, 100))
+		end
+
+	test_adjusted_band_moves_the_right_edges
+		local
+			s: OCR_SW_SELECTOR
+			b: TUPLE [x, y, w, h: INTEGER]
+		do
+			create s.make
+				-- bottom-right corner: grows both dimensions
+			b := s.adjusted_band (5, 100, 100, 200, 100, 10, 5)
+			assert_integers_equal ("BR leaves x", 100, b.x)
+			assert_integers_equal ("BR grows w", 210, b.w)
+			assert_integers_equal ("BR grows h", 105, b.h)
+				-- top-left corner: moves origin, shrinks size
+			b := s.adjusted_band (1, 100, 100, 200, 100, 10, 5)
+			assert_integers_equal ("TL moves x", 110, b.x)
+			assert_integers_equal ("TL shrinks w", 190, b.w)
+			assert_integers_equal ("TL shrinks h", 95, b.h)
+				-- a middle moves ONE edge only
+			b := s.adjusted_band (4, 100, 100, 200, 100, -20, 999)
+			assert_integers_equal ("right middle ignores dy on y", 100, b.y)
+			assert_integers_equal ("right middle ignores dy on h", 100, b.h)
+			assert_integers_equal ("and pulls only w", 180, b.w)
+				-- the interior carries the whole box unchanged in size
+			b := s.adjusted_band (9, 100, 100, 200, 100, -7, 3)
+			assert_integers_equal ("move x", 93, b.x)
+			assert_integers_equal ("move y", 103, b.y)
+			assert_integers_equal ("move keeps w", 200, b.w)
+			assert_integers_equal ("move keeps h", 100, b.h)
+		end
+
+	test_adjusted_band_clamps_at_min_side
+			-- Pulling an edge across its opposite cannot destroy the
+			-- box: the pull clamps at Min_side.
+		local
+			s: OCR_SW_SELECTOR
+			b: TUPLE [x, y, w, h: INTEGER]
+		do
+			create s.make
+			b := s.adjusted_band (8, 100, 100, 200, 100, 500, 0)
+			assert_integers_equal ("left edge stops Min_side short", s.Min_side, b.w)
+			assert_integers_equal ("pinned to the right edge", 300 - s.Min_side, b.x)
+			b := s.adjusted_band (2, 100, 100, 200, 100, 0, 500)
+			assert_integers_equal ("top edge likewise", s.Min_side, b.h)
+			b := s.adjusted_band (5, 100, 100, 200, 100, -500, -500)
+			assert_integers_equal ("BR pulled through TL clamps w", s.Min_side, b.w)
+			assert_integers_equal ("and h", s.Min_side, b.h)
+			assert_integers_equal ("without moving the origin", 100, b.x)
+		end
+
 feature -- Outline lifecycle (real frame windows, offscreen)
 
 	test_outlines_show_suspend_resume

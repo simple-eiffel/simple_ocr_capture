@@ -4,6 +4,13 @@ Simple OCR Capture
 Capture a region of the screen, run it through a local OCR model, and append
 the text to a single file.
 
+New in 1.10.0: the region picker grows handles. A drag opens ADJUST
+mode - eight grab handles resize the box, its interior drags it
+whole, arrows nudge by a pixel (Shift+arrows resize), Enter or Apply
+accepts. And when a region is already set, the Set buttons open
+straight onto it for micro-adjustment - no more one long perfect
+drag across a full page.
+
 New in 1.9.0: critical fix - the region picker no longer freezes the
 Windows session. Its events were being lost to a private
 translation-unit copy of the event queue; they now reach the

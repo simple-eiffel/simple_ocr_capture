@@ -590,8 +590,14 @@ feature {NONE} -- Actions
 
 	on_set_region
 		do
-			report ("Drag a rectangle; Esc or right-click cancels.")
-			selector.start (agent on_region_chosen)
+			if settings.is_region_valid then
+				report ("Adjust the box by its handles - or drag outside it to draw anew. Enter accepts.")
+				selector.start_adjusting (settings.region_x, settings.region_y,
+					settings.region_width, settings.region_height, agent on_region_chosen)
+			else
+				report ("Drag a rectangle; Esc or right-click cancels.")
+				selector.start (agent on_region_chosen)
+			end
 		end
 
 	on_region_chosen (a_rect: detachable TUPLE [x, y, w, h: INTEGER])
@@ -615,8 +621,14 @@ feature {NONE} -- Actions
 
 	on_set_advance_region
 		do
-			report ("Drag a box around the NEXT PAGE button; Esc or right-click cancels.")
-			selector.start (agent on_advance_region_chosen)
+			if settings.is_advance_region_valid then
+				report ("Adjust the box by its handles - or drag outside it to draw anew. Enter accepts.")
+				selector.start_adjusting (settings.advance_x, settings.advance_y,
+					settings.advance_width, settings.advance_height, agent on_advance_region_chosen)
+			else
+				report ("Drag a box around the NEXT PAGE button; Esc or right-click cancels.")
+				selector.start (agent on_advance_region_chosen)
+			end
 		end
 
 	on_advance_region_chosen (a_rect: detachable TUPLE [x, y, w, h: INTEGER])
@@ -640,8 +652,14 @@ feature {NONE} -- Actions
 
 	on_set_label_region
 		do
-			report ("Drag a box around the PAGE INDICATOR; Esc or right-click cancels.")
-			selector.start (agent on_label_region_chosen)
+			if settings.is_page_label_region_valid then
+				report ("Adjust the box by its handles - or drag outside it to draw anew. Enter accepts.")
+				selector.start_adjusting (settings.page_label_x, settings.page_label_y,
+					settings.page_label_width, settings.page_label_height, agent on_label_region_chosen)
+			else
+				report ("Drag a box around the PAGE INDICATOR; Esc or right-click cancels.")
+				selector.start (agent on_label_region_chosen)
+			end
 		end
 
 	on_label_region_chosen (a_rect: detachable TUPLE [x, y, w, h: INTEGER])

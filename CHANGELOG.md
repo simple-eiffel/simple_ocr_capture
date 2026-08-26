@@ -6,6 +6,32 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [1.10.0] - 2026-08-26 — the region picker grows handles
+
+Setting the big text box no longer demands one long, perfect drag.
+
+### Added
+
+- **Adjust mode**: a drag no longer commits on release - the band
+  grows eight grab handles (corners move two edges, edge-middles
+  one) and its interior drags the whole box. Arrows nudge by a
+  pixel, Shift+arrows resize by a pixel, and a live "W x H" readout
+  sits in the corner. Enter or the Apply button accepts; Esc or
+  Cancel abandons; a drag begun outside the box replaces it - and a
+  mis-tap restores the box instead of losing it.
+- **Set buttons open on the existing box**: when a region is already
+  configured, "Set Region by Dragging...", the advance-button setter
+  and the page-indicator setter open the frozen desktop with that
+  box already up in adjust mode - micro-adjusting never needs the
+  long redraw again.
+- simple_shell 1.7.0: the overlay reports Enter (event 36) and the
+  arrow keys (event 37) so adjust mode has a keyboard.
+- The handle laws are pure and assaulted with bare numbers: which
+  grab point answers where (corners outrank middles, handles
+  outrank the interior), which edges each handle moves, and the
+  Min_side clamp that keeps a pull from destroying the box.
+
+
 ## [1.9.0] - 2026-08-25 — the region picker no longer locks the session
 
 Critical fix. In 1.8.0, pressing any of the three "drag a region"
@@ -265,6 +291,7 @@ not kept; the dates are those of the published installer artifacts.
 | 1.1.0 | 2026-08-08 |
 | 1.0.0 | 2026-08-06 |
 
+[1.10.0]: https://github.com/simple-eiffel/simple_ocr_capture/compare/v1.9.0...v1.10.0
 [1.9.0]: https://github.com/simple-eiffel/simple_ocr_capture/compare/v1.8.0...v1.9.0
 [1.8.0]: https://github.com/simple-eiffel/simple_ocr_capture/compare/v1.7.0...v1.8.0
 [1.7.0]: https://github.com/simple-eiffel/simple_ocr_capture/compare/v1.6.0...v1.7.0

@@ -9,7 +9,7 @@ note
 		is a continuation.
 
 		The shell-event router: while the region selector is active,
-		overlay events (31..35) go to it; the strip's (21..23) go to
+		overlay events (31..37) go to it; the strip's (21..23) go to
 		the strip; 25 is the fast tick.
 	]"
 
@@ -91,7 +91,7 @@ feature {NONE} -- The clock
 		do
 			if a_type = 25 then
 				on_tick
-			elseif a_type >= 31 and a_type <= 35 then
+			elseif a_type >= 31 and a_type <= 37 then
 				if main_window.selector.is_active then
 					main_window.selector.handle_event (a_type, a_x, a_y)
 				end
