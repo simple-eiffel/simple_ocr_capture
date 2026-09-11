@@ -13,14 +13,11 @@ note
 		run a minute, and unconditionally at two minutes - auto captions
 		without punctuation would otherwise be one block.
 
-		The track is read by a small scanner of its own rather than
-		through simple_json: a 391 KB track holds 1434 events, and
-		SIMPLE_JSON_ARRAY's invariants walk the whole array on every
-		element access, which made the first build spend 158 s of CPU
-		on one video under DBC. The scanner reads the three keys this
-		class needs (tStartMs, dDurationMs, segs[].utf8) and skips
-		everything else by structure, so an unknown key can never
-		derail it.
+		The events come through SIMPLE_JSON_STREAM one at a time: the
+		track is never parsed whole. (The first build of this class
+		carried a scanner of its own because simple_json's wrappers
+		were quadratic under DBC - 158 s of CPU on one track. That was
+		fixed in the library the same day; the scanner went with it.)
 
 		Pure text: no network, no files. The fetch lives in
 		OCR_CAPTION_TRACK; the file write in OCR_VIDEO_RUN.
@@ -38,7 +35,6 @@ feature {NONE} -- Initialization
 		do
 			create paragraphs.make (64)
 			create last_error.make_empty
-			create source.make_empty
 		end
 
 feature -- Access
@@ -87,71 +83,49 @@ feature -- Access
 feature -- Basic operations
 
 	load_json3 (a_json: READABLE_STRING_32): BOOLEAN
-			-- Parse `a_json' (a json3 track, already decoded from UTF-8)
-			-- into `paragraphs'. False, with `last_error', when it is not
-			-- a track.
+			-- Stream the events of `a_json' (a json3 track, already
+			-- decoded from UTF-8) into `paragraphs'. False, with
+			-- `last_error', when it is not a track.
 		local
+			l_stream: SIMPLE_JSON_STREAM
 			l_paragraph: STRING_32
 			l_paragraph_start: INTEGER
 		do
 			reset
-			create source.make_from_string (a_json)
-			if source.is_empty then
+			if a_json.is_empty then
 				last_error := {STRING_32} "The caption track is empty."
 			else
-				pos := source.substring_index ({STRING_32} "%"events%"", 1)
-				if pos = 0 then
-					if is_json_object then
-						last_error := {STRING_32} "The caption track has no events list."
-					else
-						last_error := {STRING_32} "The caption track is not JSON."
-					end
-				else
-					pos := pos + 8
-					skip_blanks
-					if pos <= source.count and then source.item (pos) = ':' then
-						pos := pos + 1
-					end
-					skip_blanks
-					if pos > source.count or else source.item (pos) /= '[' then
-						last_error := {STRING_32} "The caption track's events are not a list."
-					else
-						pos := pos + 1
-						create l_paragraph.make (400)
-						from
-							skip_blanks
-						until
-							pos > source.count or else source.item (pos) = ']'
-						loop
-							if source.item (pos) = '{' then
-								read_event
-								if not event_text.is_empty then
-									event_count := event_count + 1
-									if should_break (l_paragraph, event_text, event_start - l_paragraph_start) then
-										flush (l_paragraph)
-									end
-									if l_paragraph.is_empty then
-										l_paragraph_start := event_start
-									else
-										l_paragraph.append_character (' ')
-									end
-									l_paragraph.append (event_text)
-									word_count := word_count + words_in (event_text)
-								end
-							elseif source.item (pos) = ',' then
-								pos := pos + 1
-							else
-									-- anything else here is malformed; step past it
-								pos := pos + 1
+				create l_stream.make_from_string_at (a_json.to_string_32, "events")
+				create l_paragraph.make (400)
+				across
+					l_stream as ic
+				loop
+					if ic.value.is_object then
+						read_event (ic.value.as_object)
+						if not event_text.is_empty then
+							event_count := event_count + 1
+							if should_break (l_paragraph, event_text, event_start - l_paragraph_start) then
+								flush (l_paragraph)
 							end
-							skip_blanks
+							if l_paragraph.is_empty then
+								l_paragraph_start := event_start
+							else
+								l_paragraph.append_character (' ')
+							end
+							l_paragraph.append (event_text)
+							word_count := word_count + words_in (event_text)
 						end
-						flush (l_paragraph)
-						Result := True
 					end
 				end
+				if l_stream.has_errors then
+					paragraphs.wipe_out
+					last_error := {STRING_32} "The caption track could not be read: "
+					last_error.append (l_stream.last_errors.first.message)
+				else
+					flush (l_paragraph)
+					Result := True
+				end
 			end
-			source.wipe_out
 		ensure
 			error_on_failure: not Result implies not last_error.is_empty
 			loaded_on_success: Result implies last_error.is_empty
@@ -219,7 +193,6 @@ feature {NONE} -- Paragraphs
 			event_count := 0
 			word_count := 0
 			duration_ms := 0
-			pos := 0
 			event_start := 0
 			create event_text.make_empty
 		end
@@ -260,13 +233,7 @@ feature {NONE} -- Paragraphs
 			end
 		end
 
-feature {NONE} -- Scanner state
-
-	source: STRING_32
-			-- The track being read; emptied when the read is done.
-
-	pos: INTEGER
-			-- The scanner's cursor into `source'.
+feature {NONE} -- Events
 
 	event_start: INTEGER
 			-- tStartMs of the event `read_event' just read.
@@ -277,286 +244,31 @@ feature {NONE} -- Scanner state
 			create Result.make_empty
 		end
 
-feature {NONE} -- Scanner
-
-	is_json_object: BOOLEAN
-			-- Does `source' open with a brace, after any whitespace?
+	read_event (a_event: SIMPLE_JSON_OBJECT)
+			-- Read one event's tStartMs, dDurationMs and segs into
+			-- `event_start', `duration_ms' and `event_text'.
 		local
 			i: INTEGER
+			l_raw: STRING_32
 		do
-			from
-				i := 1
-			until
-				i > source.count or else not source.item (i).is_space
-			loop
-				i := i + 1
-			end
-			Result := i <= source.count and then source.item (i) = '{'
-		end
-
-	skip_blanks
-		do
-			from
-			until
-				pos > source.count or else not source.item (pos).is_space
-			loop
-				pos := pos + 1
-			end
-		end
-
-	read_event
-			-- At '{': read one event's tStartMs, dDurationMs and segs
-			-- into `event_start', `duration_ms' and `event_text';
-			-- leave `pos' after its closing brace.
-		require
-			at_brace: pos <= source.count and then source.item (pos) = '{'
-		local
-			l_key, l_raw: STRING_32
-			l_start, l_duration: INTEGER
-		do
+			event_start := a_event.integer_item ({STRING_32} "tStartMs").to_integer_32
+			duration_ms := duration_ms.max (event_start + a_event.integer_item ({STRING_32} "dDurationMs").to_integer_32)
 			create l_raw.make (80)
-			pos := pos + 1
-			from
-				skip_blanks
-			until
-				pos > source.count or else source.item (pos) = '}'
-			loop
-				if source.item (pos) = '%"' then
-					l_key := read_string
-					skip_blanks
-					if pos <= source.count and then source.item (pos) = ':' then
-						pos := pos + 1
-					end
-					skip_blanks
-					if l_key.same_string_general ("tStartMs") then
-						l_start := read_number
-					elseif l_key.same_string_general ("dDurationMs") then
-						l_duration := read_number
-					elseif l_key.same_string_general ("segs") then
-						read_segs (l_raw)
-					else
-						skip_value
-					end
-				else
-						-- a comma between members, or something malformed
-					pos := pos + 1
-				end
-				skip_blanks
-			end
-			if pos <= source.count then
-				pos := pos + 1
-			end
-			event_start := l_start
-			duration_ms := duration_ms.max (l_start + l_duration)
-			event_text := collapsed (l_raw)
-		end
-
-	read_segs (a_raw: STRING_32)
-			-- At '[': append every segment's utf8 to `a_raw'; leave
-			-- `pos' after the closing bracket.
-		local
-			l_key: STRING_32
-		do
-			if pos <= source.count and then source.item (pos) = '[' then
-				pos := pos + 1
+			if attached a_event.array_item ({STRING_32} "segs") as al_segs then
 				from
-					skip_blanks
+					i := 1
 				until
-					pos > source.count or else source.item (pos) = ']'
+					i > al_segs.count
 				loop
-					if source.item (pos) = '{' then
-						pos := pos + 1
-						from
-							skip_blanks
-						until
-							pos > source.count or else source.item (pos) = '}'
-						loop
-							if source.item (pos) = '%"' then
-								l_key := read_string
-								skip_blanks
-								if pos <= source.count and then source.item (pos) = ':' then
-									pos := pos + 1
-								end
-								skip_blanks
-								if l_key.same_string_general ("utf8") and then pos <= source.count and then source.item (pos) = '%"' then
-									a_raw.append (read_string)
-								else
-									skip_value
-								end
-							else
-								pos := pos + 1
-							end
-							skip_blanks
-						end
-						if pos <= source.count then
-							pos := pos + 1
-						end
-					else
-						pos := pos + 1
+					if attached al_segs.object_item (i) as al_seg
+						and then attached al_seg.string_item ({STRING_32} "utf8") as al_piece
+					then
+						l_raw.append (al_piece)
 					end
-					skip_blanks
-				end
-				if pos <= source.count then
-					pos := pos + 1
-				end
-			else
-				skip_value
-			end
-		end
-
-	read_string: STRING_32
-			-- At '"': the string's characters with JSON escapes
-			-- decoded (surrogate pairs joined); leave `pos' after
-			-- the closing quote. An unterminated string reads to
-			-- the end.
-		require
-			at_quote: pos <= source.count and then source.item (pos) = '%"'
-		local
-			c: CHARACTER_32
-			l_code, l_low: NATURAL_32
-			l_done: BOOLEAN
-		do
-			create Result.make (32)
-			pos := pos + 1
-			from
-			until
-				l_done or pos > source.count
-			loop
-				c := source.item (pos)
-				if c = '%"' then
-					l_done := True
-					pos := pos + 1
-				elseif c = '\' and then pos < source.count then
-					pos := pos + 1
-					c := source.item (pos)
-					inspect c
-					when 'n' then Result.append_character ('%N')
-					when 't' then Result.append_character ('%T')
-					when 'r' then Result.append_character ('%R')
-					when 'b' then Result.append_character ('%B')
-					when 'f' then Result.append_character ('%F')
-					when 'u' then
-						l_code := hex_at (pos + 1)
-						pos := pos + 4
-						if l_code >= 0xD800 and l_code <= 0xDBFF and then pos + 6 <= source.count
-							and then source.item (pos + 1) = '\' and then source.item (pos + 2) = 'u'
-						then
-							l_low := hex_at (pos + 3)
-							if l_low >= 0xDC00 and l_low <= 0xDFFF then
-								l_code := 0x10000 + ((l_code - 0xD800) |<< 10) + (l_low - 0xDC00)
-								pos := pos + 6
-							end
-						end
-						Result.append_code (l_code)
-					else
-						Result.append_character (c)
-					end
-					pos := pos + 1
-				else
-					Result.append_character (c)
-					pos := pos + 1
+					i := i + 1
 				end
 			end
-		end
-
-	hex_at (a_index: INTEGER): NATURAL_32
-			-- The four hex digits at `a_index'; digits past the end
-			-- or not hex count as zero.
-		local
-			i: INTEGER
-			c: CHARACTER_32
-			d: NATURAL_32
-		do
-			from
-				i := a_index
-			until
-				i >= a_index + 4
-			loop
-				d := 0
-				if i <= source.count then
-					c := source.item (i)
-					if c >= '0' and c <= '9' then
-						d := c.natural_32_code - ('0').natural_32_code
-					elseif c >= 'a' and c <= 'f' then
-						d := c.natural_32_code - ('a').natural_32_code + 10
-					elseif c >= 'A' and c <= 'F' then
-						d := c.natural_32_code - ('A').natural_32_code + 10
-					end
-				end
-				Result := Result * 16 + d
-				i := i + 1
-			end
-		end
-
-	read_number: INTEGER
-			-- The integer at `pos' (a fractional part is dropped);
-			-- leave `pos' after it.
-		local
-			l_negative, l_in_fraction: BOOLEAN
-			c: CHARACTER_32
-		do
-			if pos <= source.count and then source.item (pos) = '-' then
-				l_negative := True
-				pos := pos + 1
-			end
-			from
-			until
-				pos > source.count or else not (source.item (pos).is_digit or source.item (pos) = '.')
-			loop
-				c := source.item (pos)
-				if c = '.' then
-					l_in_fraction := True
-				elseif not l_in_fraction and then Result < 100_000_000 then
-					Result := Result * 10 + (c.natural_32_code - ('0').natural_32_code).to_integer_32
-				end
-				pos := pos + 1
-			end
-			if l_negative then
-				Result := -Result
-			end
-		end
-
-	skip_value
-			-- Step over whatever JSON value starts at `pos': a string,
-			-- a number, a literal, or a nested object or array with
-			-- every string inside it honoured.
-		local
-			l_depth: INTEGER
-			c: CHARACTER_32
-			l_discard: STRING_32
-			l_done: BOOLEAN
-		do
-			if pos <= source.count then
-				c := source.item (pos)
-				if c = '%"' then
-					l_discard := read_string
-				elseif c = '{' or c = '[' then
-					from
-					until
-						l_done or pos > source.count
-					loop
-						c := source.item (pos)
-						if c = '%"' then
-							l_discard := read_string
-						else
-							if c = '{' or c = '[' then
-								l_depth := l_depth + 1
-							elseif c = '}' or c = ']' then
-								l_depth := l_depth - 1
-								l_done := l_depth = 0
-							end
-							pos := pos + 1
-						end
-					end
-				else
-					from
-					until
-						pos > source.count or else source.item (pos) = ',' or else source.item (pos) = '}' or else source.item (pos) = ']' or else source.item (pos).is_space
-					loop
-						pos := pos + 1
-					end
-				end
-			end
+			event_text := collapsed (l_raw)
 		end
 
 feature {NONE} -- Text

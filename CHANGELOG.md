@@ -44,11 +44,12 @@ unattended run now asks where its text goes before it starts.
   proxy for internet hosts; the Ollama path stays proxy-free) and
   can POST any content type with a browser User-Agent. Still no
   libcurl, still no redistributable.
-- The caption track is read by a dedicated json3 scanner
-  (OCR_CAPTION_TEXT) rather than simple_json: SIMPLE_JSON_ARRAY's
-  invariants walk the whole array on every element access, and the
-  first build spent 158 s of CPU on one 391 KB track under DBC.
-  The player reply (small) still goes through simple_json.
+- The caption track's events are streamed through SIMPLE_JSON_STREAM
+  (`make_from_string_at (track, "events")`), one event at a time. The
+  first build carried a scanner of its own because simple_json's
+  wrappers were quadratic under DBC (158 s of CPU on one 391 KB
+  track); that was fixed in simple_json the same day (O(1) invariants,
+  a stream that streams) and the scanner went with it.
 - 12 new tests (87 total): link forms, fmt rewrite, track ranking,
   json3 assembly and breaks, file-stem cleaning, the prompt's path
   arithmetic and its refusal to accept with a value missing.

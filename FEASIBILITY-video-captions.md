@@ -357,8 +357,10 @@ Two findings that change the plan above:
 - The watch page's caption URL (web client) answers 200 with an empty
   body; the Android client's URL works. The Eiffel path never touches
   the watch page.
-- simple_json is unusable on the 391 KB track under DBC (quadratic
-  invariants on SIMPLE_JSON_ARRAY); the track has its own scanner.
+- simple_json was unusable on the 391 KB track under DBC (quadratic
+  invariants on SIMPLE_JSON_ARRAY, 158 s of CPU). Fixed in simple_json
+  the same day: O(1) invariants and a SIMPLE_JSON_STREAM that reads
+  in chunks; the events now stream through it.
 
 Step 3 is re-decided: no cookie store and no yt-dlp. Larry's rule is a
 100%-Eiffel product. The members-only route is a WebView2 sign-in
