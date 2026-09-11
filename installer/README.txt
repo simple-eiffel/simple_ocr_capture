@@ -4,6 +4,16 @@ Simple OCR Capture
 Capture a region of the screen, run it through a local OCR model, and append
 the text to a single file.
 
+New in 1.12.0: a Video tab. Paste a YouTube link, press Look Up,
+and Fetch Transcript writes the video's captions (the CC button's
+exact text) as a transcript file in about a second - no playback, no
+OCR, no browser, no Python. Members-only or sign-in-gated videos are
+recognised and refused with the remedy in the Findings tab; a video
+with no CC button has nothing to fetch. And before ANY unattended run
+- auto-advance Start, or a video Fetch - a sheet shows the output
+folder, the file name, the resulting path and what will happen to
+that file, so nothing is written until you confirm where.
+
 New in 1.11.0: the progress strip now shows when the run started,
 the FIRST completion estimate (frozen the moment it exists), and how
 far the current projection has drifted from that first guess. The
