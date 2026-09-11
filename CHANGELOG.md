@@ -6,6 +6,36 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [1.13.0] - 2026-09-11 — the Video queue
+
+Larry, after an evening of fetching one video at a time: a list.
+
+### Added
+
+- **Video queue**: paste one link or many (lines, spaces or commas
+  apart) and press Add. Each row is looked up on the 50 ms tick, one
+  per tick, so the window stays alive while the titles, channels,
+  lengths and caption tracks fill in. Duplicates fold by video id;
+  junk is counted and left out; a refused video (members-only,
+  sign-in, no captions) says why in its row and in the findings grid.
+- **Fetch All**: one output prompt for the folder, then every ready
+  row is written to its own file, one per tick; Status turns into
+  "Saved N words in P paragraphs" row by row. **Fetch Selected** asks
+  the full prompt for one video. Rows can be renamed in place (names
+  are kept distinct with " (2)", " (3)"), removed, and cleared once
+  finished.
+- **Markdown by default for videos**: files are `<title>.md`, the
+  header is a heading and a table, and paragraphs are paragraphs. The
+  plain-text header is still written when a name ends in .txt (the
+  --captions CLI honours the extension).
+- The preview is a paragraph list: no more tofu for blank lines, no
+  more text running past its frame.
+
+### Changed
+
+- OCR_VIDEO_RUN is now one row's engine (OCR_VIDEO_ITEM), driven by
+  OCR_VIDEO_QUEUE. 4 new tests, 91 total.
+
 ## [1.12.0] - 2026-09-11 — a video's captions, and the question before every run
 
 Two asks. A YouTube video's captions become a transcript file in

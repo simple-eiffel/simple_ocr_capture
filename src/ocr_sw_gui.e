@@ -38,8 +38,8 @@ feature {NONE} -- Initialization
 			create status_strip.make (settings)
 			create cycle.make (settings, status_strip)
 			create auto_run.make (settings, cycle, status_strip)
-			create video_run.make (settings)
-			create main_window.make (settings, cycle, status_strip, video_run)
+			create video_queue.make (settings)
+			create main_window.make (settings, cycle, status_strip, video_queue)
 			create reported_error.make_empty
 			create reported_auto_message.make_empty
 
@@ -124,6 +124,7 @@ feature {NONE} -- The clock
 				cycle.poll
 				poll_pull
 				poll_auto_run
+				main_window.poll_video
 				poll_strip_health
 				if is_awaiting_runtime then
 					poll_runtime
@@ -528,7 +529,7 @@ feature {NONE} -- State
 	status_strip: OCR_SW_STRIP
 	cycle: OCR_CYCLE
 	auto_run: OCR_AUTO_RUN
-	video_run: OCR_VIDEO_RUN
+	video_queue: OCR_VIDEO_QUEUE
 	main_window: OCR_SW_MAIN_WINDOW
 
 	is_fast_timer_armed: BOOLEAN

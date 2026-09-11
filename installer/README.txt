@@ -4,6 +4,13 @@ Simple OCR Capture
 Capture a region of the screen, run it through a local OCR model, and append
 the text to a single file.
 
+New in 1.13.0: the Video tab is a queue. Paste one link or a whole
+list, press Add, and each row is looked up as it lands. Fetch All
+asks once where the files go and writes every ready video to its
+own Markdown file, named from its title; Fetch Selected asks for one
+video alone. Rename rows in place, remove them, clear the finished
+ones. Refused videos say why in their row.
+
 New in 1.12.0: a Video tab. Paste a YouTube link, press Look Up,
 and Fetch Transcript writes the video's captions (the CC button's
 exact text) as a transcript file in about a second - no playback, no

@@ -139,12 +139,21 @@ feature -- Status report
 		end
 
 	suggested_file_name: STRING_32
-			-- A file name from the title: "<title> - transcript.txt".
+			-- A file name from the title: "<title>.md". Markdown is the
+			-- default for a video: the header becomes a heading and a
+			-- table, and the paragraphs are paragraphs.
 		do
 			Result := safe_file_stem (track.title)
-			Result.append_string_general (" - transcript.txt")
+			Result.append_string_general (".md")
 		ensure
-			named: Result.count > 17
+			named: Result.count > 3
+			markdown: Result.ends_with ({STRING_32} ".md")
+		end
+
+	is_markdown_path (a_path: READABLE_STRING_GENERAL): BOOLEAN
+			-- Does `a_path' name a Markdown file?
+		do
+			Result := a_path.as_lower.ends_with (".md")
 		end
 
 feature -- Basic operations
@@ -280,7 +289,11 @@ feature {NONE} -- Implementation
 				else
 					l_file.create_read_write
 				end
-				l_file.put_string (utf8 (header (a_track)))
+				if is_markdown_path (a_path) then
+					l_file.put_string (utf8 (markdown_header (a_track)))
+				else
+					l_file.put_string (utf8 (header (a_track)))
+				end
 				l_file.put_string (utf8 (text.plain_text))
 				l_file.put_string ("%N")
 				l_file.close
@@ -292,7 +305,7 @@ feature {NONE} -- Implementation
 		end
 
 	header (a_track: INTEGER): STRING_32
-			-- The lines above the transcript naming what it is.
+			-- The lines above a plain-text transcript naming what it is.
 		require
 			in_range: a_track >= 1 and a_track <= track.tracks.count
 		local
@@ -314,6 +327,30 @@ feature {NONE} -- Implementation
 			Result.append_string_general ("%NFetched: ")
 			Result.append_string_general (l_now.out)
 			Result.append_string_general ("%N%N")
+		end
+
+	markdown_header (a_track: INTEGER): STRING_32
+			-- The same facts as a heading and a two-column table.
+		require
+			in_range: a_track >= 1 and a_track <= track.tracks.count
+		local
+			l_now: DATE_TIME
+		do
+			create l_now.make_now
+			create Result.make (400)
+			Result.append_string_general ("# ")
+			Result.append (track.title)
+			Result.append_string_general ("%N%N| | |%N|---|---|%N| URL | https://www.youtube.com/watch?v=")
+			Result.append_string_general (track.video_id)
+			Result.append_string_general (" |%N| Channel | ")
+			Result.append (track.channel)
+			Result.append_string_general (" |%N| Length | ")
+			Result.append (text.clock_caption (track.length_seconds))
+			Result.append_string_general (" |%N| Source | YouTube caption track, ")
+			Result.append (track.track_caption (a_track))
+			Result.append_string_general (" |%N| Fetched | ")
+			Result.append_string_general (l_now.out)
+			Result.append_string_general (" |%N%N")
 		end
 
 	utf8 (a_text: READABLE_STRING_GENERAL): STRING_8

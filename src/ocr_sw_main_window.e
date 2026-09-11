@@ -2,7 +2,9 @@ note
 	description: "[
 		The settings window on the pure route: SW_WINDOW hosting the
 		whole surface as tabs (Capture, Auto-advance, Video, Output,
-		Engine, Findings, Maintenance) over one status line. Same public
+		Engine, Findings, Maintenance) over one status line. The Video
+		tab is a queue: links in, lookups and fetches one per tick
+		through `poll_video', one Markdown file per video out. Same public
 		contract as the Vision2 OCR_MAIN_WINDOW it succeeds - the
 		composition root's agent wiring lands unchanged.
 
@@ -28,7 +30,7 @@ create
 
 feature {NONE} -- Initialization
 
-	make (a_settings: OCR_SETTINGS; a_cycle: OCR_CYCLE; a_strip: OCR_SW_STRIP; a_video: OCR_VIDEO_RUN)
+	make (a_settings: OCR_SETTINGS; a_cycle: OCR_CYCLE; a_strip: OCR_SW_STRIP; a_queue: OCR_VIDEO_QUEUE)
 		local
 			root: SW_COLUMN
 			bar: SW_MENU_BAR
@@ -36,7 +38,7 @@ feature {NONE} -- Initialization
 			settings := a_settings
 			cycle := a_cycle
 			status_strip := a_strip
-			video := a_video
+			queue := a_queue
 			create theme.make_dark
 			create window.make ("Simple OCR Capture " + {OCR_VERSION}.Version, 120, 60, 980, 900, theme)
 			create findings_rows.make (16)
@@ -179,6 +181,17 @@ feature -- Output confirmation (before any unattended run)
 			-- name in the box - a video is named after its title.
 		require
 			verb_given: not a_verb.is_empty
+		do
+			confirm_output_explaining ("Check both before the run starts: everything it reads is appended to this one file. Browse picks the folder; the name is yours to change.",
+				a_verb, a_suggested_name, a_then)
+		ensure
+			asking: output_prompt /= Void
+		end
+
+	confirm_output_explaining (a_explanation, a_verb: READABLE_STRING_GENERAL; a_suggested_name: detachable READABLE_STRING_GENERAL; a_then: PROCEDURE)
+			-- `confirm_output_then' with the sheet's own words.
+		require
+			verb_given: not a_verb.is_empty
 		local
 			l_prompt: OCR_SW_OUTPUT_PROMPT
 			l_name: STRING_32
@@ -189,8 +202,7 @@ feature -- Output confirmation (before any unattended run)
 			else
 				l_name := settings.text_file_name.twin
 			end
-			create l_prompt.make_prompt ("Where does the text go?",
-				"Check both before the run starts: everything it reads is appended to this one file. Browse picks the folder; the name is yours to change.",
+			create l_prompt.make_prompt ("Where does the text go?", a_explanation,
 				settings.output_folder, l_name, a_verb)
 			l_prompt.set_on_browse (agent prompt_browse)
 			l_prompt.set_on_cancel (agent prompt_cancelled)
@@ -345,7 +357,6 @@ feature -- Settings round trip
 			field_folder.set_text (settings.output_folder)
 			field_move_drive.set_text (settings.move_to_drive)
 			field_text_name.set_text (settings.text_file_name)
-			field_video_url.set_text (settings.last_video_url)
 			field_endpoint.set_text (settings.endpoint)
 			field_model.set_text (settings.model)
 			field_timeout.set_value (settings.ocr_timeout_seconds)
@@ -537,38 +548,47 @@ feature {NONE} -- Building
 		do
 			create Result.make
 			Result := Result.with_gap (10.0)
-			Result.put ((create {SW_LABEL}.make_ui ("A YouTube video's captions as one transcript file - seconds, no playback, no OCR. Nothing but the two requests the player itself makes leaves this machine.")).as_muted.with_wrap)
+			Result.put ((create {SW_LABEL}.make_ui ("Paste YouTube links, one or many. Each is looked up as it lands; Fetch writes every ready one to its own Markdown file. Nothing but the two requests the player itself makes leaves this machine.")).as_muted.with_wrap)
 			create field_video_url.make_single_line ("")
 			field_video_url.set_spellcheck (False)
 			field_video_url.set_grow (1.0)
 			create row.make
-			row := row.add (labelled ("Link", field_video_url))
+			row := row.add (labelled ("Links", field_video_url))
 			row.children.first.set_grow (1.0)
-			row := row.add (create {SW_BUTTON}.make ("Look Up", agent on_video_probe))
+			row := row.add (create {SW_BUTTON}.make ("Add", agent on_video_add))
 			Result.put (row)
-			create video_info.make_ui ("Paste a YouTube link and press Look Up.")
-			video_info := video_info.as_muted.with_wrap
-			Result.put (video_info)
-			Result.put ((create {SW_LABEL}.make_ui ("Source")).as_muted)
-			create radio_source.make
-			radio_source.add_option ("Caption track (the CC button's text, exact)")
-			radio_source.add_option ("Screen capture of the playing video - not built yet")
-			radio_source.add_option ("Audio transcription - not built yet")
-			radio_source.set_vertical (True)
-			radio_source.set_option_enabled (2, False)
-			radio_source.set_option_enabled (3, False)
-			Result.put (radio_source)
-			create button_video_fetch.make ("Fetch Transcript...", agent on_video_fetch)
+			create video_grid.make (200.0)
+			video_grid.add_column (create {SW_GRID_COLUMN [OCR_VIDEO_ITEM]}.make ("Title", 250.0, agent (v: OCR_VIDEO_ITEM): STRING_32 do Result := v.title end))
+			video_grid.add_column (create {SW_GRID_COLUMN [OCR_VIDEO_ITEM]}.make ("Channel", 140.0, agent (v: OCR_VIDEO_ITEM): STRING_32 do Result := v.channel end))
+			video_grid.add_column (create {SW_GRID_COLUMN [OCR_VIDEO_ITEM]}.make ("Length", 60.0, agent (v: OCR_VIDEO_ITEM): STRING_32 do Result := v.length_caption end))
+			video_grid.add_column (create {SW_GRID_COLUMN [OCR_VIDEO_ITEM]}.make ("Captions", 150.0, agent (v: OCR_VIDEO_ITEM): STRING_32 do Result := v.captions_caption end))
+			video_grid.add_column (create {SW_GRID_COLUMN [OCR_VIDEO_ITEM]}.make ("File", 200.0, agent (v: OCR_VIDEO_ITEM): STRING_32 do Result := v.file_name end))
+			video_grid.add_column (create {SW_GRID_COLUMN [OCR_VIDEO_ITEM]}.make ("Status", 260.0, agent (v: OCR_VIDEO_ITEM): STRING_32 do Result := v.status_caption end))
+			video_grid.set_on_select (agent on_video_selected)
+			video_grid.set_rows (queue.items)
+			Result.put (video_grid)
+			create field_video_name.make_single_line ("")
+			field_video_name.set_spellcheck (False)
+			field_video_name.set_grow (1.0)
+			create row.make
+			row := row.add (labelled ("File name", field_video_name))
+			row.children.first.set_grow (1.0)
+			row := row.add (create {SW_BUTTON}.make ("Rename", agent on_video_rename))
+			Result.put (row)
+			create button_video_fetch.make ("Fetch All...", agent on_video_fetch_all)
 			button_video_fetch.set_kind ({SW_BUTTON}.Kind_primary)
-			Result.put (button_video_fetch)
-			create video_hint.make_ui ("The transcript is appended to the file you confirm next, behind a header naming the video, channel and length.")
+			create row.make
+			row := row.add (button_video_fetch)
+				.add (create {SW_BUTTON}.make ("Fetch Selected...", agent on_video_fetch_selected))
+				.add (create {SW_BUTTON}.make ("Remove", agent on_video_remove))
+				.add (create {SW_BUTTON}.make ("Clear Finished", agent on_video_clear_finished))
+			Result.put (row)
+			create video_hint.make_ui ("Fetch All asks once where the files go; each video is written to its own .md file, named from its title (edit the name above). Fetch Selected asks for that one video alone.")
 			video_hint := video_hint.as_muted.with_wrap
 			Result.put (video_hint)
-			create video_preview.make ("")
-			video_preview.set_read_only (True)
-			video_preview.set_spellcheck (False)
+			create video_preview.make (220.0)
 			video_preview.set_grow (1.0)
-			Result.put (video_preview.with_max_size (0.0, 300.0))
+			Result.put (video_preview)
 		end
 
 	output_page: SW_COLUMN
@@ -814,112 +834,261 @@ feature {NONE} -- Actions
 			report ({STRING_32} "Figure extraction ON - transcript: " + settings.transcript_file_name)
 		end
 
-	on_video_probe
-			-- Look the pasted link up and describe it on the info line.
+	on_video_add
+			-- Every link in the box becomes a row; lookups follow on
+			-- the tick.
 		local
-			l_url: STRING_32
+			l_added: INTEGER
+			l_report: STRING_32
 		do
-			l_url := field_video_url.text.twin
-			l_url.left_adjust
-			l_url.right_adjust
-			if l_url.is_empty then
-				report ("Paste a YouTube link first.")
-			else
-				do_video_probe (l_url)
+			l_added := queue.add_links (field_video_url.text)
+			create l_report.make (80)
+			l_report.append_string_general (l_added.out)
+			l_report.append_string_general (" added")
+			if queue.last_duplicates > 0 then
+				l_report.append_string_general (", ")
+				l_report.append_string_general (queue.last_duplicates.out)
+				l_report.append_string_general (" already listed")
 			end
+			if queue.last_rejected > 0 then
+				l_report.append_string_general (", ")
+				l_report.append_string_general (queue.last_rejected.out)
+				l_report.append_string_general (" not a video link")
+			end
+			if l_added > 0 then
+				field_video_url.set_text ("")
+				l_report.append_string_general (". Looking them up...")
+			elseif queue.last_rejected = 0 and queue.last_duplicates = 0 then
+				l_report := {STRING_32} "Paste one or more YouTube links first."
+			end
+			report (l_report)
+			refresh_video_grid
 		end
 
-	do_video_probe (a_url: STRING_32)
+feature -- Video queue (the composition root's tick calls this)
+
+	poll_video
+			-- The tick's share of the queue: one lookup, or one fetch,
+			-- never both, so the window breathes between network calls.
 		do
-			report ({STRING_32} "Looking up " + a_url + {STRING_32} " ...")
-			window.request_render
-			if video.probe (a_url) then
-				video_info.set_text (video.summary_line)
-				if video.can_fetch then
-					report ("Found it. Fetch Transcript... asks where the text goes, then reads the captions.")
-				else
-					report (video.blocking_reason)
-					note_video_block
+			if queue.has_pending_lookup then
+				queue.look_up_next
+				report (queue.last_message)
+				note_video_refusals
+				refresh_video_grid
+				if not queue.has_pending_lookup then
+					report ({STRING_32} "Lookups done: " + queue.ready_count.out + {STRING_32} " ready, "
+						+ queue.refused_count.out + {STRING_32} " refused. Fetch All writes the ready ones.")
 				end
-			else
-				video_info.set_text (video.last_error)
-				report (video.last_error)
-			end
-			window.request_render
-		end
-
-	note_video_block
-			-- A refusal worth a findings row with its remedy.
-		do
-			if video.track.is_members_only then
-				add_finding ({STRING_32} "warn", {STRING_32} "video",
-					{STRING_32} "Members-only video: YouTube refused the anonymous caption request",
-					{STRING_32} "Needs the signed-in route (planned: a WebView2 login inside the app); until then, screen capture of the playing tab")
-			elseif video.track.is_probed and then video.track.is_playable and then not video.track.has_captions then
-				add_finding ({STRING_32} "warn", {STRING_32} "video",
-					{STRING_32} "No caption track on this video",
-					{STRING_32} "Nothing to fetch; the screen-capture and audio routes are the fallbacks once built")
-			end
-		end
-
-	on_video_fetch
-			-- Look up if needed, then ask where the text goes, then fetch.
-		local
-			l_url: STRING_32
-		do
-			l_url := field_video_url.text.twin
-			l_url.left_adjust
-			l_url.right_adjust
-			if l_url.is_empty then
-				report ("Paste a YouTube link first.")
-			else
-				if not video.is_probed or else not video.url.same_string (l_url) then
-					do_video_probe (l_url)
-				end
-				if video.can_fetch then
-					confirm_output_then ("Fetch", video.suggested_file_name, agent video_fetch_confirmed)
-				else
-					report (video.blocking_reason)
+			elseif queue.is_fetching then
+				queue.fetch_next
+				report (queue.last_message)
+				refresh_video_grid
+				if not queue.is_fetching then
+					report ({STRING_32} "Fetch done: " + queue.saved_count.out + {STRING_32} " transcript(s) in " + queue.folder)
+					add_finding ({STRING_32} "info", {STRING_32} "video",
+						{STRING_32} "Fetch pass finished: " + queue.saved_count.out + {STRING_32} " saved, " + queue.refused_count.out + {STRING_32} " refused",
+						{STRING_32} "The files are in " + queue.folder)
+					show_video_preview
 				end
 			end
 		end
 
-	video_fetch_confirmed
-			-- The sheet's Fetch: read the track into the confirmed file.
+feature {NONE} -- Video queue internals
+
+	note_video_refusals
+			-- A findings row for each refusal not yet noted.
 		do
-			report ({STRING_32} "Fetching captions for " + video.track.title + {STRING_32} " ...")
-			window.request_render
-			if video.fetch_and_save (settings.text_file_path) then
-				video_preview.set_text (video_preview_text)
-				report (video.last_message)
-				add_finding ({STRING_32} "info", {STRING_32} "video", video.last_message,
-					{STRING_32} "Open the file to check the text; re-fetching appends a second copy")
-			else
-				report (video.last_error)
-				add_finding ({STRING_32} "error", {STRING_32} "video", video.last_error,
-					{STRING_32} "Check the network, then Look Up again; YouTube's endpoints change and the log has the reply")
+			across
+				queue.items as ic
+			loop
+				if ic.is_refused and then not ic.is_queued and then not noted_refusals.has (ic) then
+					noted_refusals.extend (ic)
+					add_finding ({STRING_32} "warn", {STRING_32} "video", ic.title + {STRING_32} ": " + ic.detail,
+						{STRING_32} "Members-only needs the signed-in route (planned); a video with no captions has nothing to fetch")
+				end
 			end
+		end
+
+	noted_refusals: ARRAYED_LIST [OCR_VIDEO_ITEM]
+		attribute
+			create Result.make (4)
+		end
+
+	refresh_video_grid
+		do
+			video_grid.set_rows (queue.items)
 			window.request_render
 		end
 
-	video_preview_text: STRING_32
-			-- The opening of the transcript, enough to see the text is
-			-- the right video's; the file holds the rest.
+	on_video_selected (a_index: INTEGER)
+			-- The row's file name goes in the box; its text, if it has
+			-- any, in the preview.
+		do
+			if a_index >= 1 and a_index <= queue.items.count then
+				field_video_name.set_text (queue.items.i_th (a_index).file_name)
+			end
+			show_video_preview
+		end
+
+	selected_video: detachable OCR_VIDEO_ITEM
+		do
+			Result := video_grid.selected_object
+		end
+
+	show_video_preview
+			-- The selected row's paragraphs, or the last saved row's.
 		local
-			l_text: STRING_32
+			l_item: detachable OCR_VIDEO_ITEM
 		do
-			l_text := video.text.plain_text
-			if l_text.count > Preview_cap then
-				Result := l_text.substring (1, Preview_cap)
-				Result.append_string_general (" ...%N%N[")
-				Result.append_string_general (video.text.word_count.out)
-				Result.append_string_general (" words in the file]")
+			l_item := selected_video
+			if l_item = Void or else not l_item.run.text.is_loaded then
+				across
+					queue.items as ic
+				loop
+					if ic.run.text.is_loaded then
+						l_item := ic
+					end
+				end
+			end
+			video_preview.wipe_out
+			if attached l_item as al_item and then al_item.run.text.is_loaded then
+				across
+					al_item.run.text.paragraphs as ic
+				loop
+					video_preview.add (ic)
+				end
+			end
+			window.request_render
+		end
+
+	on_video_rename
+		local
+			l_name: STRING_32
+		do
+			l_name := field_video_name.text.twin
+			l_name.left_adjust
+			l_name.right_adjust
+			if video_grid.selected_model < 1 then
+				report ("Select a row to rename.")
+			elseif l_name.is_empty then
+				report ("Type a file name first.")
 			else
-				Result := l_text
+				queue.rename_item (video_grid.selected_model, l_name)
+				field_video_name.set_text (queue.items.i_th (video_grid.selected_model).file_name)
+				report ({STRING_32} "File name: " + queue.items.i_th (video_grid.selected_model).file_name)
+				refresh_video_grid
 			end
 		end
 
-	Preview_cap: INTEGER = 1500
+	on_video_fetch_all
+			-- One prompt for the folder; the file name shown is the
+			-- first ready row's and applies to it.
+		do
+			if queue.is_busy then
+				report ("Still working - wait for the lookups or the current fetch to finish.")
+			elseif queue.ready_count = 0 then
+				report ("Nothing is ready to fetch. Add links, or wait for their lookups.")
+			else
+				confirm_output_explaining ({STRING_32} "Every ready video (" + queue.ready_count.out
+					+ {STRING_32} ") is written to its own file in this folder, named as the queue shows. The name below is the first video's; change it here or rename rows in the queue.",
+					"Fetch", first_ready_name, agent video_fetch_all_confirmed)
+			end
+		end
+
+	first_ready_name: STRING_32
+		do
+			create Result.make_empty
+			across
+				queue.items as ic
+			until
+				not Result.is_empty
+			loop
+				if ic.is_ready then
+					Result := ic.file_name.twin
+				end
+			end
+		end
+
+	video_fetch_all_confirmed
+			-- The prompt stored the folder and the first name; the pass
+			-- walks the ready rows on the tick.
+		local
+			l_first: BOOLEAN
+		do
+			across
+				queue.items as ic
+			until
+				l_first
+			loop
+				if ic.is_ready then
+					l_first := True
+					if not settings.text_file_name.is_empty then
+						ic.set_file_name (settings.text_file_name)
+						ic.set_file_name (queue.distinct_name (ic.file_name, ic))
+					end
+				end
+			end
+			queue.start_fetch_all (settings.output_folder)
+			refresh_video_grid
+			report ({STRING_32} "Fetching " + queue.queued_count.out + {STRING_32} " transcript(s) into " + queue.folder + {STRING_32} " ...")
+		end
+
+	on_video_fetch_selected
+		do
+			if queue.is_busy then
+				report ("Still working - wait for the lookups or the current fetch to finish.")
+			elseif not attached selected_video as al_item then
+				report ("Select a row first.")
+			elseif not al_item.is_ready then
+				report ({STRING_32} "That row is not ready: " + al_item.status_caption)
+			else
+				confirm_output_explaining ({STRING_32} "This one video, " + al_item.title
+					+ {STRING_32} ", is written to the file below in this folder. A file that already exists is appended to.",
+					"Fetch", al_item.file_name, agent video_fetch_one_confirmed (video_grid.selected_model))
+			end
+		end
+
+	video_fetch_one_confirmed (a_index: INTEGER)
+		do
+			if a_index >= 1 and a_index <= queue.items.count and then queue.items.i_th (a_index).is_ready then
+				if not settings.text_file_name.is_empty then
+					queue.rename_item (a_index, settings.text_file_name)
+				end
+				queue.start_fetch_one (a_index, settings.output_folder)
+				refresh_video_grid
+				report ({STRING_32} "Fetching " + queue.items.i_th (a_index).title + {STRING_32} " ...")
+			end
+		end
+
+	on_video_remove
+		do
+			if video_grid.selected_model < 1 then
+				report ("Select a row to remove.")
+			elseif queue.is_busy then
+				report ("Wait for the queue to finish before removing rows.")
+			else
+				queue.remove (video_grid.selected_model)
+				video_grid.select_model_row (0)
+				field_video_name.set_text ("")
+				refresh_video_grid
+				report ("Row removed.")
+			end
+		end
+
+	on_video_clear_finished
+		do
+			if queue.is_busy then
+				report ("Wait for the queue to finish first.")
+			else
+				queue.clear_finished
+				noted_refusals.wipe_out
+				video_grid.select_model_row (0)
+				field_video_name.set_text ("")
+				refresh_video_grid
+				report ("Saved, refused and failed rows cleared; the files stay where they were written.")
+			end
+		end
 
 	on_set_region
 		do
@@ -1469,7 +1638,7 @@ feature {NONE} -- State
 	settings: OCR_SETTINGS
 	cycle: OCR_CYCLE
 	status_strip: OCR_SW_STRIP
-	video: OCR_VIDEO_RUN
+	queue: OCR_VIDEO_QUEUE
 	is_loading: BOOLEAN
 
 	on_hotkey_changed: detachable PROCEDURE
@@ -1503,11 +1672,11 @@ feature {NONE} -- State
 	field_num_ctx: SW_NUMBER_BOX attribute create Result.make (8192, 512, 131072, Void) end
 	field_folder: SW_TEXT_BOX attribute create Result.make_single_line ("") end
 	field_video_url: SW_TEXT_BOX attribute create Result.make_single_line ("") end
-	video_info: SW_LABEL attribute create Result.make_ui ("") end
+	field_video_name: SW_TEXT_BOX attribute create Result.make_single_line ("") end
 	video_hint: SW_LABEL attribute create Result.make_ui ("") end
-	video_preview: SW_TEXT_BOX attribute create Result.make ("") end
-	radio_source: SW_RADIO_GROUP attribute create Result.make end
-	button_video_fetch: SW_BUTTON attribute create Result.make ("Fetch Transcript...", Void) end
+	video_preview: SW_PARAGRAPH_LIST attribute create Result.make (220.0) end
+	video_grid: SW_DATA_GRID [OCR_VIDEO_ITEM] attribute create Result.make (200.0) end
+	button_video_fetch: SW_BUTTON attribute create Result.make ("Fetch All...", Void) end
 	field_move_drive: SW_TEXT_BOX attribute create Result.make_single_line ("") end
 	field_text_name: SW_TEXT_BOX attribute create Result.make_single_line ("") end
 	field_endpoint: SW_TEXT_BOX attribute create Result.make_single_line ("") end

@@ -963,7 +963,7 @@ feature {NONE} -- Modes
 			print ("  --health                      check the whole setup; exit 1 if not ready%N")
 			print ("  --images list|delete|move <folder> [drive]  the ocr_* images in a folder%N")
 			print ("  --settings [drive]            print persisted settings; with an argument, store it first%N")
-			print ("  --captions <url> <out-text>   fetch a YouTube video's caption track as a transcript%N")
+			print ("  --captions <url> <out-file>   fetch a YouTube video's caption track as a transcript (.md for Markdown)%N")
 		end
 
 feature {NONE} -- Constants

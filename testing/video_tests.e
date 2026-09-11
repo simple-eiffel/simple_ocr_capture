@@ -176,7 +176,9 @@ feature -- Test: OCR_VIDEO_RUN
 			assert_true ("empty falls back", l_run.safe_file_stem ({STRING_32} "???").same_string_general ("video"))
 			create l_long.make_filled ('x', 200)
 			assert_integers_equal ("capped", l_run.Stem_cap, l_run.safe_file_stem (l_long).count)
-			assert_true ("suggested name", l_run.suggested_file_name.same_string_general ("video - transcript.txt"))
+			assert_true ("suggested name is markdown", l_run.suggested_file_name.same_string_general ("video.md"))
+			assert_true ("md path", l_run.is_markdown_path ("C:\x\Talk.MD"))
+			assert_false ("txt path", l_run.is_markdown_path ("C:\x\Talk.txt"))
 		end
 
 	test_blocking_before_probe
@@ -189,6 +191,82 @@ feature -- Test: OCR_VIDEO_RUN
 			assert_false ("not fetchable", l_run.can_fetch)
 			assert_true ("reason given", not l_run.blocking_reason.is_empty)
 			assert_true ("summary invites", l_run.summary_line.has_substring ({STRING_32} "Look Up"))
+		end
+
+feature -- Test: OCR_VIDEO_QUEUE
+
+	test_queue_adds_and_folds_links
+			-- Several links at once; duplicates by id fold; junk is
+			-- counted and left out.
+		note
+			testing: "covers/{OCR_VIDEO_QUEUE}.add_links"
+		local
+			l_queue: OCR_VIDEO_QUEUE
+			l_added: INTEGER
+		do
+			create l_queue.make (create {OCR_SETTINGS})
+			l_added := l_queue.add_links ("https://youtu.be/fouffdu6dDk%Nhttps://www.youtube.com/watch?v=fouffdu6dDk, notalink%N  https://www.youtube.com/live/elAhMGTGn48  ")
+			assert_integers_equal ("two added", 2, l_added)
+			assert_integers_equal ("one duplicate", 1, l_queue.last_duplicates)
+			assert_integers_equal ("one rejected", 1, l_queue.last_rejected)
+			assert_integers_equal ("two rows", 2, l_queue.count)
+			assert_integers_equal ("both pending", 2, l_queue.pending_count)
+			assert_true ("pending lookup", l_queue.has_pending_lookup)
+			assert_false ("not fetching", l_queue.is_fetching)
+			assert_true ("found by id", attached l_queue.item_of_id ("elAhMGTGn48"))
+			assert_integers_equal ("nothing on empty", 0, l_queue.add_links (""))
+		end
+
+	test_queue_names_stay_distinct
+			-- Two rows named alike get numeric suffixes; renaming keeps
+			-- the .md extension.
+		note
+			testing: "covers/{OCR_VIDEO_QUEUE}.distinct_name"
+		local
+			l_queue: OCR_VIDEO_QUEUE
+			l_added: INTEGER
+		do
+			create l_queue.make (create {OCR_SETTINGS})
+			l_added := l_queue.add_links ("https://youtu.be/fouffdu6dDk https://youtu.be/elAhMGTGn48 https://youtu.be/b_QpN0VRndQ")
+			l_queue.rename_item (1, "Talk")
+			assert_true ("md appended", l_queue.items.i_th (1).file_name.same_string_general ("Talk.md"))
+			l_queue.rename_item (2, "Talk.md")
+			assert_true ("second distinct", l_queue.items.i_th (2).file_name.same_string_general ("Talk (2).md"))
+			l_queue.rename_item (3, "talk.MD")
+			assert_true ("case-insensitive distinct", l_queue.items.i_th (3).file_name.same_string_general ("talk (2).MD") or l_queue.items.i_th (3).file_name.same_string_general ("talk (3).MD"))
+			assert_true ("own name is not a clash", l_queue.distinct_name ("Talk.md", l_queue.items.i_th (1)).same_string_general ("Talk.md"))
+		end
+
+	test_queue_remove_and_clear
+		note
+			testing: "covers/{OCR_VIDEO_QUEUE}.remove, covers/{OCR_VIDEO_QUEUE}.clear_finished"
+		local
+			l_queue: OCR_VIDEO_QUEUE
+			l_added: INTEGER
+		do
+			create l_queue.make (create {OCR_SETTINGS})
+			l_added := l_queue.add_links ("https://youtu.be/fouffdu6dDk https://youtu.be/elAhMGTGn48")
+			l_queue.remove (1)
+			assert_integers_equal ("one left", 1, l_queue.count)
+			assert_true ("the second remains", l_queue.items.i_th (1).video_id.same_string ("elAhMGTGn48"))
+			l_queue.clear_finished
+			assert_integers_equal ("pending rows stay", 1, l_queue.count)
+		end
+
+	test_item_states_before_lookup
+		note
+			testing: "covers/{OCR_VIDEO_ITEM}.status_caption"
+		local
+			l_item: OCR_VIDEO_ITEM
+		do
+			create l_item.make ("https://youtu.be/fouffdu6dDk", create {OCR_SETTINGS})
+			assert_true ("pending", l_item.is_pending)
+			assert_false ("not finished", l_item.is_finished)
+			assert_true ("title is the link until looked up", l_item.title.same_string_general ("https://youtu.be/fouffdu6dDk"))
+			assert_true ("status says waiting", l_item.status_caption.has_substring ({STRING_32} "waiting"))
+			assert_true ("no captions caption yet", l_item.captions_caption.is_empty)
+			l_item.set_file_name ("x")
+			assert_true ("md by default", l_item.file_name.same_string_general ("x.md"))
 		end
 
 feature -- Test: OCR_SW_OUTPUT_PROMPT

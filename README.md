@@ -70,10 +70,11 @@ first run; a discrete GPU with 12 GB or more of VRAM is strongly recommended.
 
 ### Video
 
-- **YouTube captions to transcript** — paste a link on the Video tab, Look Up
-  reads the title, channel, length and caption availability, Fetch Transcript
-  writes the caption track as paragraphs in about a second: no playback, no OCR,
-  no browser, no Python. Pure Eiffel over WinHTTP and a json3 scanner
+- **YouTube captions to transcript** — paste one link or a whole list on the
+  Video tab; each is looked up as it lands (title, channel, length, caption
+  track), then Fetch All writes every ready video to its own Markdown file in
+  one folder, about a second each: no playback, no OCR, no browser, no Python.
+  Pure Eiffel over WinHTTP, the events streamed through simple_json
 - **Members-only and sign-in-gated videos are recognised and refused** with the
   remedy in the findings grid; the signed-in route is designed, not yet built
 - `--captions <url> <out.txt>` does the same headless

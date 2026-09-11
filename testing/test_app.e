@@ -64,6 +64,10 @@ feature {NONE} -- Test runners
 			run_test (agent t.test_clock_caption, "clock_caption")
 			run_test (agent t.test_safe_file_stem, "safe_file_stem")
 			run_test (agent t.test_blocking_before_probe, "blocking_before_probe")
+			run_test (agent t.test_queue_adds_and_folds_links, "queue_adds_and_folds_links")
+			run_test (agent t.test_queue_names_stay_distinct, "queue_names_stay_distinct")
+			run_test (agent t.test_queue_remove_and_clear, "queue_remove_and_clear")
+			run_test (agent t.test_item_states_before_lookup, "item_states_before_lookup")
 			run_test (agent t.test_output_prompt_paths, "output_prompt_paths")
 			run_test (agent t.test_output_prompt_accept_needs_both, "output_prompt_accept_needs_both")
 		end
