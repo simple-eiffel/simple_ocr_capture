@@ -6,6 +6,63 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [1.12.0] - 2026-09-11 — a video's captions, and the question before every run
+
+Two asks. A YouTube video's captions become a transcript file in
+about a second, with no playback, no OCR and no Python; and every
+unattended run now asks where its text goes before it starts.
+
+### Added
+
+- **Video tab**: paste a YouTube link, Look Up shows the title,
+  channel, length and whether the captions can be fetched; Fetch
+  Transcript... reads the caption track (the CC button's exact text)
+  and appends it to the confirmed file behind a header naming the
+  video. The first 1500 characters preview in the tab. Measured on
+  a 23:40 video: 4465 words in 22 paragraphs, one second, the same
+  word count yt-dlp reports. Paragraphs break at YouTube's `>>`
+  speaker marks, at a sentence end after a minute, and at two
+  minutes regardless.
+- **Output prompt before any unattended run**: Start on the
+  Auto-advance tab (and the strip's play button) and Fetch on the
+  Video tab first show a sheet with the output folder, a Browse
+  button, the file name, the full path and what will happen to it —
+  created, or appended to behind N KB already there. A folder that
+  does not exist is created on the verb; both values are stored
+  where every writer reads them. Nothing is written before the
+  sheet is answered.
+- `--captions <url> <out-text>` CLI mode: the whole Video path
+  headless, exit 1 when the video cannot be read.
+- Members-only and sign-in-gated videos are recognised from the
+  player's own answer (title, channel and length still shown) and
+  refused with a findings row naming the remedy; a video with no
+  caption track likewise.
+
+### Changed
+
+- OCR_HTTP speaks https (WinHTTP, `WINHTTP_FLAG_SECURE`, default
+  proxy for internet hosts; the Ollama path stays proxy-free) and
+  can POST any content type with a browser User-Agent. Still no
+  libcurl, still no redistributable.
+- The caption track is read by a dedicated json3 scanner
+  (OCR_CAPTION_TEXT) rather than simple_json: SIMPLE_JSON_ARRAY's
+  invariants walk the whole array on every element access, and the
+  first build spent 158 s of CPU on one 391 KB track under DBC.
+  The player reply (small) still goes through simple_json.
+- 12 new tests (87 total): link forms, fmt rewrite, track ranking,
+  json3 assembly and breaks, file-stem cleaning, the prompt's path
+  arithmetic and its refusal to accept with a value missing.
+
+### Not yet
+
+- Members-only videos need the user's YouTube session. The
+  100%-Eiffel route is a WebView2 sign-in inside the app
+  (simple_browser) with the fetch made from the signed-in page;
+  the design doc's cookie-store route is rejected (Edge's store is
+  locked by startup boost and app-bound encrypted on current
+  builds). Screen capture of the playing tab and audio
+  transcription remain the fallbacks in the design, not built.
+
 ## [1.11.0] - 2026-08-26 — figures, Markdown, and an honest clock
 
 Three asks in one release: the strip tells the WHOLE time story, the

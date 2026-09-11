@@ -12,10 +12,10 @@ class
 
 feature -- Access
 
-	Version: STRING = "1.11.0"
+	Version: STRING = "1.12.0"
 			-- The released version this build carries.
 
-	Built: STRING = "2026-08-26"
+	Built: STRING = "2026-09-11"
 			-- The day this version was finalized.
 
 end

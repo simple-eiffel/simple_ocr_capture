@@ -131,6 +131,20 @@
                     window are put back as they were found</li>
             </ul>
 
+            <h3>Video</h3>
+            <ul>
+                <li><strong>YouTube captions to transcript</strong> &mdash; paste a link on the
+                    Video tab, Look Up reads the title, channel, length and caption availability,
+                    Fetch Transcript writes the caption track as paragraphs in about a second:
+                    no playback, no OCR, no browser. Pure Eiffel over WinHTTP</li>
+                <li><strong>The output prompt</strong> &mdash; every unattended run, a book or a
+                    video, first shows the folder, file name and resulting path, and starts only
+                    from that sheet</li>
+                <li><strong>Gated videos are refused, not guessed at</strong> &mdash; members-only
+                    and sign-in-gated videos are recognised from the player's answer and land in
+                    the findings grid with the remedy</li>
+            </ul>
+
             <h3>Output and diagnostics</h3>
             <ul>
                 <li><strong>One transcript file</strong>, appended to, with optional per-capture
@@ -209,6 +223,11 @@ export SIMPLE_EIFFEL=/d/prod    <span class="comment"># where the simple_* libra
                 <li>
                     The window opens at a size tuned for a 150% display and may look oversized
                     at 100%. It is freely resizable; the chosen size is not yet remembered.
+                </li>
+                <li>
+                    Video captions come from YouTube's caption track only. A members-only or
+                    sign-in-gated video is refused, and a video with no CC button has nothing to
+                    fetch; the screen-capture and audio routes are designed, not built.
                 </li>
             </ul>
         </section>

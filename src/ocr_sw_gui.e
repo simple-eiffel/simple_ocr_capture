@@ -38,7 +38,8 @@ feature {NONE} -- Initialization
 			create status_strip.make (settings)
 			create cycle.make (settings, status_strip)
 			create auto_run.make (settings, cycle, status_strip)
-			create main_window.make (settings, cycle, status_strip)
+			create video_run.make (settings)
+			create main_window.make (settings, cycle, status_strip, video_run)
 			create reported_error.make_empty
 			create reported_auto_message.make_empty
 
@@ -268,15 +269,26 @@ feature {NONE} -- Setup checks
 feature {NONE} -- Auto-advance
 
 	start_auto_run
+			-- Resume a pause outright; a fresh start first puts the
+			-- output folder and file in front of the user on a sheet -
+			-- a whole book must not land in last week's file - and
+			-- continues in `start_auto_run_confirmed'.
 		do
 			if auto_run.is_paused then
 				auto_run.resume
 				sync_auto_controls
 			elseif not auto_run.is_ready_to_start then
 				main_window.report (auto_run.blocking_reason)
-			elseif not main_window.is_output_folder_ready then
-					-- already reported by the check itself
-			elseif not health_permits_auto_run then
+			else
+				main_window.confirm_output_then ("Start", Void, agent start_auto_run_confirmed)
+			end
+		end
+
+	start_auto_run_confirmed
+			-- The sheet's Start: the folder exists and both values are
+			-- stored; the health check is the last gate.
+		do
+			if not health_permits_auto_run then
 				main_window.report ({STRING_32} "Not starting: " + health.failure_summary)
 			else
 				auto_run.start
@@ -516,6 +528,7 @@ feature {NONE} -- State
 	status_strip: OCR_SW_STRIP
 	cycle: OCR_CYCLE
 	auto_run: OCR_AUTO_RUN
+	video_run: OCR_VIDEO_RUN
 	main_window: OCR_SW_MAIN_WINDOW
 
 	is_fast_timer_armed: BOOLEAN

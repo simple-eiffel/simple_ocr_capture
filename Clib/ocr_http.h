@@ -1,5 +1,5 @@
 /*
- * ocr_http.h - Minimal HTTP POST for Eiffel, built on WinHTTP.
+ * ocr_http.h - Minimal HTTP/HTTPS GET and POST for Eiffel, built on WinHTTP.
  *
  * Why not simple_http / curl_http_client: that path resolves libcurl.dll at
  * runtime, and libcurl.dll ships only inside EiffelStudio's studio\spec\win64\bin,
@@ -106,15 +106,25 @@ static wchar_t *ohttp_widen (const char *s)
  * what is buffered right now, not the whole body; a single read would silently
  * truncate a large OCR reply.
  */
-static char *ohttp_request (const char *a_verb, const char *a_host, int a_port,
-                            const char *a_path, const char *a_body, int a_body_len,
-                            int a_timeout_ms, int *a_out_len)
+/*
+ * a_secure   : 1 = TLS (https), 0 = plain http. TLS requests go through the
+ *              machine's default WinHTTP proxy settings; plain ones (the local
+ *              Ollama endpoint) stay proxy-free as before.
+ * a_headers  : extra request headers, CRLF-terminated ("Content-Type: ...\r\n"),
+ *              or NULL for none. Widened here; may carry several lines.
+ * a_agent    : the User-Agent string, or NULL for the application's own.
+ */
+static char *ohttp_request_ex (const char *a_verb, int a_secure, const char *a_host,
+                               int a_port, const char *a_path, const char *a_headers,
+                               const char *a_agent, const char *a_body, int a_body_len,
+                               int a_timeout_ms, int *a_out_len)
 {
     HINTERNET hSession = NULL, hConnect = NULL, hRequest = NULL;
-    wchar_t  *wHost = NULL, *wPath = NULL, *wVerb = NULL;
+    wchar_t  *wHost = NULL, *wPath = NULL, *wVerb = NULL, *wHeaders = NULL, *wAgent = NULL;
     char     *buffer = NULL, *grown = NULL;
     DWORD     total = 0, avail = 0, read = 0, cap = 0;
     DWORD     status = 0, statusLen = sizeof (DWORD);
+    DWORD     flags = 0;
     BOOL      ok = FALSE;
 
     ohttp_last_status = 0;
@@ -125,9 +135,18 @@ static char *ohttp_request (const char *a_verb, const char *a_host, int a_port,
     wPath = ohttp_widen (a_path);
     wVerb = ohttp_widen (a_verb);
     if (wHost == NULL || wPath == NULL || wVerb == NULL) goto cleanup;
+    if (a_headers != NULL && a_headers[0] != '\0') {
+        wHeaders = ohttp_widen (a_headers);
+        if (wHeaders == NULL) goto cleanup;
+    }
+    if (a_agent != NULL && a_agent[0] != '\0') {
+        wAgent = ohttp_widen (a_agent);
+        if (wAgent == NULL) goto cleanup;
+    }
 
-    hSession = WinHttpOpen (L"simple_ocr_capture/1.0",
-                            WINHTTP_ACCESS_TYPE_NO_PROXY,
+    hSession = WinHttpOpen (wAgent != NULL ? wAgent : L"simple_ocr_capture/1.0",
+                            a_secure ? 0 /* WINHTTP_ACCESS_TYPE_DEFAULT_PROXY */
+                                     : WINHTTP_ACCESS_TYPE_NO_PROXY,
                             WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0);
     if (hSession == NULL) goto cleanup;
 
@@ -138,13 +157,14 @@ static char *ohttp_request (const char *a_verb, const char *a_host, int a_port,
     hConnect = WinHttpConnect (hSession, wHost, (INTERNET_PORT) a_port, 0);
     if (hConnect == NULL) goto cleanup;
 
+    if (a_secure) flags |= 0x00800000; /* WINHTTP_FLAG_SECURE */
     hRequest = WinHttpOpenRequest (hConnect, wVerb, wPath, NULL,
                                    WINHTTP_NO_REFERER,
-                                   WINHTTP_DEFAULT_ACCEPT_TYPES, 0);
+                                   WINHTTP_DEFAULT_ACCEPT_TYPES, flags);
     if (hRequest == NULL) goto cleanup;
 
     ok = WinHttpSendRequest (hRequest,
-                             L"Content-Type: application/json\r\n", (DWORD) -1L,
+                             wHeaders, wHeaders != NULL ? (DWORD) -1L : 0,
                              (LPVOID) a_body, (DWORD) a_body_len,
                              (DWORD) a_body_len, 0);
     if (!ok) goto cleanup;
@@ -190,6 +210,8 @@ static char *ohttp_request (const char *a_verb, const char *a_host, int a_port,
     free (wHost);
     free (wPath);
     free (wVerb);
+    if (wHeaders) free (wHeaders);
+    if (wAgent)   free (wAgent);
     return buffer;
 
 cleanup:
@@ -201,7 +223,19 @@ cleanup:
     if (wHost)    free (wHost);
     if (wPath)    free (wPath);
     if (wVerb)    free (wVerb);
+    if (wHeaders) free (wHeaders);
+    if (wAgent)   free (wAgent);
     return NULL;
+}
+
+/* The original plain-http entry point, kept for the Ollama callers. */
+static char *ohttp_request (const char *a_verb, const char *a_host, int a_port,
+                            const char *a_path, const char *a_body, int a_body_len,
+                            int a_timeout_ms, int *a_out_len)
+{
+    return ohttp_request_ex (a_verb, 0, a_host, a_port, a_path,
+                             "Content-Type: application/json\r\n", NULL,
+                             a_body, a_body_len, a_timeout_ms, a_out_len);
 }
 
 /* Convenience wrappers so callers do not repeat the verb literal. */
@@ -226,6 +260,16 @@ static void ohttp_free (char *p) { if (p) free (p); }
 
 #else
 /* ============ NON-WINDOWS STUBS ============ */
+static char *ohttp_request_ex (const char *a_verb, int a_secure, const char *a_host,
+                               int a_port, const char *a_path, const char *a_headers,
+                               const char *a_agent, const char *a_body, int a_body_len,
+                               int a_timeout_ms, int *a_out_len)
+{
+    (void) a_verb; (void) a_secure; (void) a_host; (void) a_port; (void) a_path;
+    (void) a_headers; (void) a_agent; (void) a_body; (void) a_body_len; (void) a_timeout_ms;
+    if (a_out_len) *a_out_len = 0;
+    return NULL;
+}
 static char *ohttp_post_json (const char *a_host, int a_port, const char *a_path,
                               const char *a_body, int a_body_len,
                               int a_timeout_ms, int *a_out_len)

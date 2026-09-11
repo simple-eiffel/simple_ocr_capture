@@ -34,6 +34,8 @@ feature {NONE} -- Initialization
 
 			print ("%N-- simple_widgets rebuild tests --%N")
 			run_rebuild_tests
+			print ("%N-- video caption tests --%N")
+			run_video_tests
 
 			print ("%N========================%N")
 			print ("Results: " + passed.out + " passed, " + failed.out + " failed%N")
@@ -46,6 +48,25 @@ feature {NONE} -- Initialization
 		end
 
 feature {NONE} -- Test runners
+
+	run_video_tests
+		local
+			t: VIDEO_TESTS
+		do
+			create t
+			run_test (agent t.test_video_id_forms, "video_id_forms")
+			run_test (agent t.test_video_id_refusals, "video_id_refusals")
+			run_test (agent t.test_json3_url_replaces_fmt, "json3_url_replaces_fmt")
+			run_test (agent t.test_preferred_track_ranking, "preferred_track_ranking")
+			run_test (agent t.test_caption_text_assembles_events, "caption_text_assembles_events")
+			run_test (agent t.test_caption_text_breaks_on_time, "caption_text_breaks_on_time")
+			run_test (agent t.test_caption_text_refuses_junk, "caption_text_refuses_junk")
+			run_test (agent t.test_clock_caption, "clock_caption")
+			run_test (agent t.test_safe_file_stem, "safe_file_stem")
+			run_test (agent t.test_blocking_before_probe, "blocking_before_probe")
+			run_test (agent t.test_output_prompt_paths, "output_prompt_paths")
+			run_test (agent t.test_output_prompt_accept_needs_both, "output_prompt_accept_needs_both")
+		end
 
 	rebuild_tests: detachable SW_REBUILD_TESTS
 

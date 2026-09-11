@@ -340,3 +340,28 @@ image store has nothing to sweep.
 5. Screen capture source: region, tick, fingerprint, settle, merge,
    speed combo, preview.
 6. Audio source, last, behind simple_speech.
+
+---
+
+## Status 2026-09-11 (evening): steps 1 and 2 built, in pure Eiffel
+
+Shipped in 1.12.0: OCR_HTTP speaks https; OCR_CAPTION_TRACK asks the
+player endpoint as the Android client and reads the json3 track;
+OCR_CAPTION_TEXT assembles paragraphs; OCR_VIDEO_RUN writes the file;
+the Video tab and `--captions` drive it; OCR_SW_OUTPUT_PROMPT asks where
+the text goes before any unattended run. Live on youtu.be/fouffdu6dDk:
+4465 words, 22 paragraphs, one second, no Python, no browser.
+
+Two findings that change the plan above:
+
+- The watch page's caption URL (web client) answers 200 with an empty
+  body; the Android client's URL works. The Eiffel path never touches
+  the watch page.
+- simple_json is unusable on the 391 KB track under DBC (quadratic
+  invariants on SIMPLE_JSON_ARRAY); the track has its own scanner.
+
+Step 3 is re-decided: no cookie store and no yt-dlp. Larry's rule is a
+100%-Eiffel product. The members-only route is a WebView2 sign-in
+inside the app (simple_browser) with the player POST made from the
+signed-in page, or the WebView2 cookie manager feeding OCR_HTTP. Steps
+4 to 6 stand as written.

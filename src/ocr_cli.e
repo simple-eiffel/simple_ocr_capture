@@ -67,12 +67,54 @@ feature {NONE} -- Initialization
 				run_images (l_args)
 			elseif l_args.argument_count >= 1 and then l_args.argument (1).same_string_general ("--settings") then
 				run_settings (l_args)
+			elseif l_args.argument_count >= 1 and then l_args.argument (1).same_string_general ("--captions") then
+				run_captions (l_args)
 			else
 				print_usage
 			end
 		end
 
 feature {NONE} -- Modes
+
+	run_captions (a_args: ARGUMENTS_32)
+			-- Fetch a YouTube video's caption track into a transcript
+			-- file: the Video tab's whole path with no window, so the
+			-- two network calls can be checked from a script. Exit 1
+			-- when the video cannot be read, 2 on usage.
+		local
+			l_settings: OCR_SETTINGS
+			l_run: OCR_VIDEO_RUN
+		do
+			if a_args.argument_count < 3 then
+				io.error.put_string ("usage: --captions <youtube-url> <out-text>%N")
+				set_exit_code (2)
+			else
+				create l_settings
+				create l_run.make (l_settings)
+				if not l_run.probe (a_args.argument (2)) then
+					io.error.put_string ("probe failed: ")
+					io.error.put_string (utf8 (l_run.last_error))
+					io.error.put_new_line
+					set_exit_code (1)
+				else
+					print (utf8 (l_run.summary_line))
+					print ("%N")
+					if not l_run.can_fetch then
+						io.error.put_string (utf8 (l_run.blocking_reason))
+						io.error.put_new_line
+						set_exit_code (1)
+					elseif l_run.fetch_and_save (a_args.argument (3)) then
+						print (utf8 (l_run.last_message))
+						print ("%N")
+					else
+						io.error.put_string ("fetch failed: ")
+						io.error.put_string (utf8 (l_run.last_error))
+						io.error.put_new_line
+						set_exit_code (1)
+					end
+				end
+			end
+		end
 
 	run_outline (a_args: ARGUMENTS_32)
 			-- Draw a dashed outline around a given rectangle for a few seconds.
@@ -921,6 +963,7 @@ feature {NONE} -- Modes
 			print ("  --health                      check the whole setup; exit 1 if not ready%N")
 			print ("  --images list|delete|move <folder> [drive]  the ocr_* images in a folder%N")
 			print ("  --settings [drive]            print persisted settings; with an argument, store it first%N")
+			print ("  --captions <url> <out-text>   fetch a YouTube video's caption track as a transcript%N")
 		end
 
 feature {NONE} -- Constants

@@ -31,6 +31,7 @@ feature {NONE} -- Initialization
 			region_height := 600
 			create output_folder.make_from_string_general (default_output_folder)
 			create text_file_name.make_from_string_general (Default_text_file_name)
+			create last_video_url.make_empty
 			save_text := True
 			save_image := True
 			add_separators := True
@@ -121,6 +122,10 @@ feature -- Access: output
 
 	capture_index: INTEGER
 			-- Number of captures taken; drives image file numbering.
+
+	last_video_url: STRING_32
+			-- The YouTube link last looked up on the Video tab, so it is
+			-- back in the box on the next start.
 
 feature -- Access: trigger
 
@@ -429,6 +434,13 @@ feature -- Element change
 			-- not accept an empty name, and a placeholder that is obviously not
 			-- a book title cannot silently append one book onto another's
 			-- transcript, which is the failure the reset exists to prevent.
+
+	set_last_video_url (a_url: READABLE_STRING_GENERAL)
+		do
+			create last_video_url.make_from_string_general (a_url)
+		ensure
+			set: last_video_url.same_string_general (a_url)
+		end
 
 	set_text_file_name (a_name: READABLE_STRING_GENERAL)
 		require
@@ -760,6 +772,7 @@ feature {NONE} -- Persistence implementation
 			Result.append ("  %"page_label_height%": " + page_label_height.out + ",%N")
 			Result.append ("  %"auto_advance%": " + auto_advance.out.as_lower + ",%N")
 			Result.append ("  %"advance_delay_ms%": " + advance_delay_ms.out + ",%N")
+			Result.append ("  %"last_video_url%": " + u.quoted (last_video_url) + ",%N")
 			Result.append ("  %"capture_index%": " + capture_index.out + "%N")
 			Result.append ("}%N")
 		end
@@ -776,6 +789,9 @@ feature {NONE} -- Persistence implementation
 			end
 			if attached a_obj.string_item ({STRING_32} "text_file_name") as al_s and then not al_s.is_empty then
 				text_file_name := al_s.twin
+			end
+			if attached a_obj.string_item ({STRING_32} "last_video_url") as al_s then
+				last_video_url := al_s.twin
 			end
 			save_text := boolean_from (a_obj, "save_text", save_text)
 			save_image := boolean_from (a_obj, "save_image", save_image)
@@ -921,6 +937,7 @@ feature -- Constants
 
 invariant
 	folder_attached: output_folder /= Void
+	video_url_attached: last_video_url /= Void
 	drive_attached: move_to_drive /= Void
 	name_not_empty: not text_file_name.is_empty
 	format_known: image_format.same_string ("png") or image_format.same_string ("bmp")

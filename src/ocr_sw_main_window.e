@@ -1,8 +1,8 @@
 note
 	description: "[
 		The settings window on the pure route: SW_WINDOW hosting the
-		whole surface as tabs (Capture, Auto-advance, Output, Engine,
-		Findings, Maintenance) over one status line. Same public
+		whole surface as tabs (Capture, Auto-advance, Video, Output,
+		Engine, Findings, Maintenance) over one status line. Same public
 		contract as the Vision2 OCR_MAIN_WINDOW it succeeds - the
 		composition root's agent wiring lands unchanged.
 
@@ -12,6 +12,12 @@ note
 		OCR_SW_SELECTOR (route overlay events here); outlines ride
 		OCR_SW_OUTLINES; the preview is an SW_IMAGE over the grab's
 		thumbnail surface.
+
+		Every unattended capture - auto-advance, a video's captions -
+		passes through `confirm_output_then': the output folder and
+		file name are put in front of the user, on a sheet, before a
+		single byte is written. The verb button carries the run on as
+		a continuation.
 	]"
 
 class
@@ -22,7 +28,7 @@ create
 
 feature {NONE} -- Initialization
 
-	make (a_settings: OCR_SETTINGS; a_cycle: OCR_CYCLE; a_strip: OCR_SW_STRIP)
+	make (a_settings: OCR_SETTINGS; a_cycle: OCR_CYCLE; a_strip: OCR_SW_STRIP; a_video: OCR_VIDEO_RUN)
 		local
 			root: SW_COLUMN
 			bar: SW_MENU_BAR
@@ -30,6 +36,7 @@ feature {NONE} -- Initialization
 			settings := a_settings
 			cycle := a_cycle
 			status_strip := a_strip
+			video := a_video
 			create theme.make_dark
 			create window.make ("Simple OCR Capture " + {OCR_VERSION}.Version, 120, 60, 980, 900, theme)
 			create findings_rows.make (16)
@@ -161,6 +168,121 @@ feature -- Output folder readiness
 			end
 		end
 
+feature -- Output confirmation (before any unattended run)
+
+	confirm_output_then (a_verb: READABLE_STRING_GENERAL; a_suggested_name: detachable READABLE_STRING_GENERAL; a_then: PROCEDURE)
+			-- Put the output folder and file name in front of the user
+			-- on a sheet whose primary button reads `a_verb'; when it is
+			-- pressed with both present, the folder exists (created if
+			-- it did not) and both are stored, then `a_then' runs.
+			-- `a_suggested_name', when given, replaces the stored file
+			-- name in the box - a video is named after its title.
+		require
+			verb_given: not a_verb.is_empty
+		local
+			l_prompt: OCR_SW_OUTPUT_PROMPT
+			l_name: STRING_32
+		do
+			store_to_settings
+			if attached a_suggested_name as al_name and then not al_name.is_empty then
+				create l_name.make_from_string_general (al_name)
+			else
+				l_name := settings.text_file_name.twin
+			end
+			create l_prompt.make_prompt ("Where does the text go?",
+				"Check both before the run starts: everything it reads is appended to this one file. Browse picks the folder; the name is yours to change.",
+				settings.output_folder, l_name, a_verb)
+			l_prompt.set_on_browse (agent prompt_browse)
+			l_prompt.set_on_cancel (agent prompt_cancelled)
+			l_prompt.set_on_accept (agent prompt_accepted (?, ?, a_then))
+			output_prompt := l_prompt
+			window.show_sheet (l_prompt, 680.0)
+		ensure
+			asking: output_prompt /= Void
+		end
+
+feature {NONE} -- Output confirmation internals
+
+	output_prompt: detachable OCR_SW_OUTPUT_PROMPT
+			-- The sheet up right now, if any; kept so the Browse round
+			-- trip can put it back after the folder picker.
+
+	prompt_browse
+			-- Swap the prompt for the folder picker; the pick (or its
+			-- cancel) brings the prompt back.
+		local
+			fd: SW_FILE_DIALOG
+			start_dir: STRING_32
+		do
+			if attached output_prompt as al_prompt then
+				start_dir := al_prompt.folder
+				if start_dir.is_empty or else not (create {DIRECTORY}.make (start_dir)).exists then
+					create start_dir.make_from_string_general ("C:\")
+				end
+				create fd.make_open (start_dir)
+				fd.set_on_accept (agent prompt_folder_picked)
+				fd.set_on_cancel (agent prompt_reshow)
+				window.show_sheet (fd, 640.0)
+			end
+		end
+
+	prompt_folder_picked (a_path: STRING_32)
+			-- The picker names files; the folder of the pick - or the
+			-- path itself when it is a directory - goes in the box.
+		local
+			dir: STRING_32
+			i: INTEGER
+		do
+			dir := a_path.twin
+			if not (create {DIRECTORY}.make (dir)).exists then
+				i := dir.last_index_of ('\', dir.count)
+				if i > 1 then
+					dir.keep_head (i - 1)
+				end
+			end
+			if attached output_prompt as al_prompt then
+				al_prompt.set_folder (dir)
+			end
+			prompt_reshow
+		end
+
+	prompt_reshow
+		do
+			window.close_sheet
+			if attached output_prompt as al_prompt then
+				window.show_sheet (al_prompt, 680.0)
+			end
+			window.request_render
+		end
+
+	prompt_cancelled
+		do
+			window.close_sheet
+			output_prompt := Void
+			report ("Not started - nothing has been written.")
+			window.request_render
+		end
+
+	prompt_accepted (a_folder, a_name: STRING_32; a_then: PROCEDURE)
+			-- Both present: make the folder real, store both values
+			-- where every writer reads them, then run.
+		do
+			window.close_sheet
+			output_prompt := Void
+			if created_folder (a_folder) then
+				is_loading := True
+				field_folder.set_text (a_folder)
+				field_text_name.set_text (a_name)
+				is_loading := False
+				store_to_settings
+				settings.store
+				window.request_render
+				a_then.call
+			else
+				report ({STRING_32} "Could not create " + a_folder + {STRING_32} " - check the path for a typo or a drive that is not there. Nothing has been written.")
+			end
+		end
+
 feature -- Auto-advance state
 
 	show_auto_state (a_running, a_paused: BOOLEAN)
@@ -223,6 +345,7 @@ feature -- Settings round trip
 			field_folder.set_text (settings.output_folder)
 			field_move_drive.set_text (settings.move_to_drive)
 			field_text_name.set_text (settings.text_file_name)
+			field_video_url.set_text (settings.last_video_url)
 			field_endpoint.set_text (settings.endpoint)
 			field_model.set_text (settings.model)
 			field_timeout.set_value (settings.ocr_timeout_seconds)
@@ -330,6 +453,7 @@ feature {NONE} -- Building
 			create tabs.make
 			tabs.add_page ("Capture", capture_page)
 			tabs.add_page ("Auto-advance", auto_page)
+			tabs.add_page ("Video", video_page)
 			tabs.add_page ("Output", output_page)
 			tabs.add_page ("Engine", engine_page)
 			tabs.add_page ("Findings", findings_page)
@@ -405,6 +529,46 @@ feature {NONE} -- Building
 			create auto_hint.make_ui ("Set both regions above, then Start.")
 			auto_hint := auto_hint.as_muted
 			Result.put (auto_hint)
+		end
+
+	video_page: SW_COLUMN
+		local
+			row: SW_ROW
+		do
+			create Result.make
+			Result := Result.with_gap (10.0)
+			Result.put ((create {SW_LABEL}.make_ui ("A YouTube video's captions as one transcript file - seconds, no playback, no OCR. Nothing but the two requests the player itself makes leaves this machine.")).as_muted.with_wrap)
+			create field_video_url.make_single_line ("")
+			field_video_url.set_spellcheck (False)
+			field_video_url.set_grow (1.0)
+			create row.make
+			row := row.add (labelled ("Link", field_video_url))
+			row.children.first.set_grow (1.0)
+			row := row.add (create {SW_BUTTON}.make ("Look Up", agent on_video_probe))
+			Result.put (row)
+			create video_info.make_ui ("Paste a YouTube link and press Look Up.")
+			video_info := video_info.as_muted.with_wrap
+			Result.put (video_info)
+			Result.put ((create {SW_LABEL}.make_ui ("Source")).as_muted)
+			create radio_source.make
+			radio_source.add_option ("Caption track (the CC button's text, exact)")
+			radio_source.add_option ("Screen capture of the playing video - not built yet")
+			radio_source.add_option ("Audio transcription - not built yet")
+			radio_source.set_vertical (True)
+			radio_source.set_option_enabled (2, False)
+			radio_source.set_option_enabled (3, False)
+			Result.put (radio_source)
+			create button_video_fetch.make ("Fetch Transcript...", agent on_video_fetch)
+			button_video_fetch.set_kind ({SW_BUTTON}.Kind_primary)
+			Result.put (button_video_fetch)
+			create video_hint.make_ui ("The transcript is appended to the file you confirm next, behind a header naming the video, channel and length.")
+			video_hint := video_hint.as_muted.with_wrap
+			Result.put (video_hint)
+			create video_preview.make ("")
+			video_preview.set_read_only (True)
+			video_preview.set_spellcheck (False)
+			video_preview.set_grow (1.0)
+			Result.put (video_preview.with_max_size (0.0, 300.0))
 		end
 
 	output_page: SW_COLUMN
@@ -591,6 +755,7 @@ feature {NONE} -- Actions
 			col.put (labelled ("Endpoint", create {SW_LABEL}.make_mono (settings.endpoint)))
 			col.put (labelled ("Page labels", create {SW_LABEL}.make_mono ("the OCR model (indicator prompt)")))
 			col.put (labelled ("Figure detect", create {SW_LABEL}.make_mono ("Windows OCR text mask + model confirm")))
+			col.put (labelled ("Video captions", create {SW_LABEL}.make_mono ("YouTube caption track over WinHTTP - no model, no browser")))
 			col.put (create {SW_SEPARATOR}.make_labeled ("Built on"))
 			col.put (create {SW_LABEL}.make_body ("simple_widgets over simple_shell and cairo - pure Eiffel and Win32: no Vision2, no runtime, no redistributable."))
 			col.put (create {SW_SEPARATOR}.make_labeled ("If the region picker is ever stuck"))
@@ -648,6 +813,113 @@ feature {NONE} -- Actions
 			store_to_settings
 			report ({STRING_32} "Figure extraction ON - transcript: " + settings.transcript_file_name)
 		end
+
+	on_video_probe
+			-- Look the pasted link up and describe it on the info line.
+		local
+			l_url: STRING_32
+		do
+			l_url := field_video_url.text.twin
+			l_url.left_adjust
+			l_url.right_adjust
+			if l_url.is_empty then
+				report ("Paste a YouTube link first.")
+			else
+				do_video_probe (l_url)
+			end
+		end
+
+	do_video_probe (a_url: STRING_32)
+		do
+			report ({STRING_32} "Looking up " + a_url + {STRING_32} " ...")
+			window.request_render
+			if video.probe (a_url) then
+				video_info.set_text (video.summary_line)
+				if video.can_fetch then
+					report ("Found it. Fetch Transcript... asks where the text goes, then reads the captions.")
+				else
+					report (video.blocking_reason)
+					note_video_block
+				end
+			else
+				video_info.set_text (video.last_error)
+				report (video.last_error)
+			end
+			window.request_render
+		end
+
+	note_video_block
+			-- A refusal worth a findings row with its remedy.
+		do
+			if video.track.is_members_only then
+				add_finding ({STRING_32} "warn", {STRING_32} "video",
+					{STRING_32} "Members-only video: YouTube refused the anonymous caption request",
+					{STRING_32} "Needs the signed-in route (planned: a WebView2 login inside the app); until then, screen capture of the playing tab")
+			elseif video.track.is_probed and then video.track.is_playable and then not video.track.has_captions then
+				add_finding ({STRING_32} "warn", {STRING_32} "video",
+					{STRING_32} "No caption track on this video",
+					{STRING_32} "Nothing to fetch; the screen-capture and audio routes are the fallbacks once built")
+			end
+		end
+
+	on_video_fetch
+			-- Look up if needed, then ask where the text goes, then fetch.
+		local
+			l_url: STRING_32
+		do
+			l_url := field_video_url.text.twin
+			l_url.left_adjust
+			l_url.right_adjust
+			if l_url.is_empty then
+				report ("Paste a YouTube link first.")
+			else
+				if not video.is_probed or else not video.url.same_string (l_url) then
+					do_video_probe (l_url)
+				end
+				if video.can_fetch then
+					confirm_output_then ("Fetch", video.suggested_file_name, agent video_fetch_confirmed)
+				else
+					report (video.blocking_reason)
+				end
+			end
+		end
+
+	video_fetch_confirmed
+			-- The sheet's Fetch: read the track into the confirmed file.
+		do
+			report ({STRING_32} "Fetching captions for " + video.track.title + {STRING_32} " ...")
+			window.request_render
+			if video.fetch_and_save (settings.text_file_path) then
+				video_preview.set_text (video_preview_text)
+				report (video.last_message)
+				add_finding ({STRING_32} "info", {STRING_32} "video", video.last_message,
+					{STRING_32} "Open the file to check the text; re-fetching appends a second copy")
+			else
+				report (video.last_error)
+				add_finding ({STRING_32} "error", {STRING_32} "video", video.last_error,
+					{STRING_32} "Check the network, then Look Up again; YouTube's endpoints change and the log has the reply")
+			end
+			window.request_render
+		end
+
+	video_preview_text: STRING_32
+			-- The opening of the transcript, enough to see the text is
+			-- the right video's; the file holds the rest.
+		local
+			l_text: STRING_32
+		do
+			l_text := video.text.plain_text
+			if l_text.count > Preview_cap then
+				Result := l_text.substring (1, Preview_cap)
+				Result.append_string_general (" ...%N%N[")
+				Result.append_string_general (video.text.word_count.out)
+				Result.append_string_general (" words in the file]")
+			else
+				Result := l_text
+			end
+		end
+
+	Preview_cap: INTEGER = 1500
 
 	on_set_region
 		do
@@ -1197,6 +1469,7 @@ feature {NONE} -- State
 	settings: OCR_SETTINGS
 	cycle: OCR_CYCLE
 	status_strip: OCR_SW_STRIP
+	video: OCR_VIDEO_RUN
 	is_loading: BOOLEAN
 
 	on_hotkey_changed: detachable PROCEDURE
@@ -1229,6 +1502,12 @@ feature {NONE} -- State
 	field_timeout: SW_NUMBER_BOX attribute create Result.make (240, 5, 3600, Void) end
 	field_num_ctx: SW_NUMBER_BOX attribute create Result.make (8192, 512, 131072, Void) end
 	field_folder: SW_TEXT_BOX attribute create Result.make_single_line ("") end
+	field_video_url: SW_TEXT_BOX attribute create Result.make_single_line ("") end
+	video_info: SW_LABEL attribute create Result.make_ui ("") end
+	video_hint: SW_LABEL attribute create Result.make_ui ("") end
+	video_preview: SW_TEXT_BOX attribute create Result.make ("") end
+	radio_source: SW_RADIO_GROUP attribute create Result.make end
+	button_video_fetch: SW_BUTTON attribute create Result.make ("Fetch Transcript...", Void) end
 	field_move_drive: SW_TEXT_BOX attribute create Result.make_single_line ("") end
 	field_text_name: SW_TEXT_BOX attribute create Result.make_single_line ("") end
 	field_endpoint: SW_TEXT_BOX attribute create Result.make_single_line ("") end

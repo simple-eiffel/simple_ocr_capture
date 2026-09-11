@@ -68,7 +68,21 @@ first run; a discrete GPU with 12 GB or more of VRAM is strongly recommended.
 - **Duplicate suppression** — text identical to the block just written is not appended
 - **Focus-preserving clicks** — the pointer and foreground window are put back as found
 
+### Video
+
+- **YouTube captions to transcript** — paste a link on the Video tab, Look Up
+  reads the title, channel, length and caption availability, Fetch Transcript
+  writes the caption track as paragraphs in about a second: no playback, no OCR,
+  no browser, no Python. Pure Eiffel over WinHTTP and a json3 scanner
+- **Members-only and sign-in-gated videos are recognised and refused** with the
+  remedy in the findings grid; the signed-in route is designed, not yet built
+- `--captions <url> <out.txt>` does the same headless
+
 ### Output and diagnostics
+
+- **The output prompt** — every unattended run (auto-advance, a video fetch) first
+  shows the output folder, file name, resulting path and what will happen to the
+  file, and starts only from that sheet's verb
 
 - **One transcript file**, appended to, with optional per-capture header lines
 - **Progress strip** — scan rate, page rate and ETA once a run has two captures behind it
@@ -135,9 +149,9 @@ Binaries land in `EIFGENs/<target>/F_code/`.
 | Target | What it is |
 |---|---|
 | `ocr_capture` | The shipped GUI application |
-| `ocr_cli` | Headless `--worker` (spawned per capture) and `--shot` (pipeline check) |
+| `ocr_cli` | Headless `--worker` (spawned per capture), `--shot` (pipeline check), `--captions` (video transcript) |
 | `hotkey_spike` | Throwaway proof that the system-wide hotkey fires |
-| `simple_ocr_capture_tests` | Console test runner (61 tests) |
+| `simple_ocr_capture_tests` | Console test runner (87 tests) |
 
 ### Dependencies
 
@@ -162,6 +176,10 @@ path that is not on `PATH`, so a finalized binary fails with a bare "cURL issue"
   the advance box needs re-dragging.
 - The window is tuned for a 150% display and may look oversized at 100%. It is
   resizable; the chosen size is not yet remembered.
+- Video captions come from YouTube's caption track only. A members-only or
+  sign-in-gated video is refused (the player will not hand its track to an
+  anonymous request), and a video with no CC button has nothing to fetch; the
+  screen-capture and audio routes in FEASIBILITY-video-captions.md are not built.
 
 ---
 
