@@ -104,6 +104,9 @@ case $MODE in
             echo -e "${RED}ERROR: Inno Setup not found at $ISCC${NC}"
             exit 1
         fi
+        # Finalize recreates F_code, and cairo.dll is not a build product:
+        # the installer script copies it from F_code, so put it there first.
+        cp "/d/prod/simple_cairo/cairo.dll" "$SCRIPT_DIR/EIFGENs/ocr_capture/F_code/"
         echo -e "${BLUE}Building the installer...${NC}"
         "$ISCC" "$SCRIPT_DIR/installer/simple_ocr_capture.iss"
         ;;
