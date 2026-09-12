@@ -560,6 +560,10 @@ feature {NONE} -- Building
 			row := row.add (create {SW_BUTTON}.make ("Add", agent on_video_add))
 			Result.put (row)
 			create video_grid.make (200.0)
+				-- The list is the primary content: give it the lion's share of
+				-- any height the window gains below. The preview still grows,
+				-- at a third of the rate (see video_preview.set_grow below).
+			video_grid.set_grow (2.0)
 			video_grid.add_column (create {SW_GRID_COLUMN [OCR_VIDEO_ITEM]}.make ("Title", 250.0, agent (v: OCR_VIDEO_ITEM): STRING_32 do Result := v.title end))
 			video_grid.add_column (create {SW_GRID_COLUMN [OCR_VIDEO_ITEM]}.make ("Channel", 140.0, agent (v: OCR_VIDEO_ITEM): STRING_32 do Result := v.channel end))
 			video_grid.add_column (create {SW_GRID_COLUMN [OCR_VIDEO_ITEM]}.make ("Length", 60.0, agent (v: OCR_VIDEO_ITEM): STRING_32 do Result := v.length_caption end))
