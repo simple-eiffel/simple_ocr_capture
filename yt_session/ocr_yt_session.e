@@ -103,13 +103,17 @@ feature {NONE} -- Delivery
 
 	on_deliver (a_seq: STRING_8; a_req: STRING_8)
 			-- The injected script calls ocr_deliver(kind, base64(payload)),
-			-- so `a_req' is a JSON array ["kind","<b64>"] whose two tokens
-			-- carry no quotes or newlines and survive the wrapping intact.
-			-- kind is "track" (payload is the json3 body) or "refused"
-			-- (payload is the reason).
+			-- so `a_req' is a JSON array ["kind","<b64>"]. kind is one of:
+			--   track    - payload is the json3 body: save and advance.
+			--   gate     - a membership/login wall: send the window to
+			--              youtube.com to sign in, unless already signed in
+			--              (then it is a real refusal - not a member).
+			--   signedin - the sign-in page reports a logged-in session:
+			--              go back and fetch the gated video.
+			--   refused  - a real block (private/removed/no captions) or a
+			--              capture timeout that has run out of retries.
 		local
-			l_id, l_kind, l_payload, l_reason: STRING_8
-			l_members: BOOLEAN
+			l_id, l_kind, l_payload: STRING_8
 		do
 			browser.respond (a_seq, "%"ok%"")
 			l_id := ids.i_th (current_index)
@@ -119,25 +123,32 @@ feature {NONE} -- Delivery
 				write_file (l_id + ".json3", l_payload)
 				print ("  saved " + l_payload.count.out + " bytes%N")
 				advance
-			else
-				l_reason := l_payload
-				l_members := has_token (l_reason, "member") or has_token (l_reason, "Join this channel")
-					or has_token (l_reason, "LOGIN_REQUIRED")
-					-- A "timeout" is no caption request captured yet - almost
-					-- always a long pre-roll ad or a player that had not begun
-					-- playing; it retries. A members gate retries too, to give
-					-- the user this window to sign in. A real UNPLAYABLE with a
-					-- reason (private, removed, no captions) does not.
-				if (l_members or has_token (l_reason, "timeout")) and then attempts < Max_attempts then
-					print ("  transient (" + l_reason + "); retry%N")
-					start_current
-				else
-					write_file (l_id + ".refused", l_reason)
-					print ("  refused: " + l_reason + "%N")
+			elseif l_kind.same_string ("signedin") then
+				is_signed_in := True
+				print ("  signed in; fetching%N")
+				browser.navigate_to (urls.i_th (current_index))
+			elseif l_kind.same_string ("gate") then
+				if is_signed_in then
+					write_file (l_id + ".refused", l_payload)
+					print ("  refused (signed in, not a member): " + l_payload + "%N")
 					advance
+				else
+					print ("  members-only; opening youtube.com to sign in%N")
+					browser.navigate_to ("https://www.youtube.com/")
 				end
+			elseif has_token (l_payload, "timeout") and then attempts < Max_attempts then
+				print ("  no captions yet; retry%N")
+				start_current
+			else
+				write_file (l_id + ".refused", l_payload)
+				print ("  refused: " + l_payload + "%N")
+				advance
 			end
 		end
+
+	is_signed_in: BOOLEAN
+			-- Has a signed-in session been confirmed this run? Once true it
+			-- stays true, so later gated videos skip the sign-in step.
 
 feature {NONE} -- Files
 
@@ -337,18 +348,33 @@ feature {NONE} -- Payload decode (the arg is ["kind","<base64>"])
   var oo=XMLHttpRequest.prototype.open, os=XMLHttpRequest.prototype.send;
   XMLHttpRequest.prototype.open=function(m,u){ this.__u=u; return oo.apply(this,arguments); };
   XMLHttpRequest.prototype.send=function(){ var x=this; if(isTrack(x.__u)){ x.addEventListener('load',function(){ var t=x.responseText||''; if(t&&t.length>50) deliver('track', t); }); } return os.apply(this,arguments); };
+  function loggedIn(){ try{ if(window.ytcfg&&ytcfg.get&&ytcfg.get('LOGGED_IN')) return true; }catch(e){} return !!document.querySelector('#avatar-btn, ytd-topbar-menu-button-renderer #avatar-btn, button#avatar-btn'); }
+  var onWatch = location.pathname.indexOf('/watch')===0;
   var n=0; var iv=setInterval(function(){
     n++;
     try{
+      if(!onWatch){
+          // Sign-in phase: we sent the window to youtube.com; wait, patiently,
+          // for a signed-in session, then tell the helper to fetch.
+        if(loggedIn()){ clearInterval(iv); deliver('signedin',''); }
+        else if(n>1800){ clearInterval(iv); deliver('gate','sign-in not completed'); }
+        return;
+      }
       var pr=window.ytInitialPlayerResponse, st=pr&&pr.playabilityStatus&&pr.playabilityStatus.status;
       if(!TARGET && pr&&pr.videoDetails&&pr.videoDetails.videoId) TARGET=pr.videoDetails.videoId;
-      if(st && st!=='OK'){ clearInterval(iv); deliver('refused', st+': '+(pr.playabilityStatus.reason||'')); return; }
+      if(st && st!=='OK'){
+        clearInterval(iv);
+        var reason=(pr.playabilityStatus.reason||'');
+        var gate = /member|join this channel/i.test(reason) || st==='LOGIN_REQUIRED';
+        deliver(gate?'gate':'refused', st+': '+reason);
+        return;
+      }
       var sk=document.querySelector('.ytp-ad-skip-button, .ytp-ad-skip-button-modern, .ytp-skip-ad-button'); if(sk){ try{sk.click();}catch(e){} }
       var v=document.querySelector('video'); if(v){ v.muted=true; if(v.paused){ try{v.play();}catch(e){} } }
       var mp=document.getElementById('movie_player');
       if(mp&&mp.loadModule){ try{mp.loadModule('captions');}catch(e){} try{mp.setOption('captions','track',{languageCode:'en'});}catch(e){} }
     }catch(e){}
-    if(n>90){ clearInterval(iv); if(!done) deliver('refused', 'no caption request captured (timeout)'); }
+    if(onWatch && n>90){ clearInterval(iv); if(!done) deliver('refused', 'no caption request captured (timeout)'); }
   },500);
 })();
 ]"

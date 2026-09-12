@@ -38,7 +38,11 @@ signs in the way a person does: in a real browser window it hosts.
   inside the signed-in page. The helper instead patches the page's
   fetch/XHR to capture the player's own caption request, locks onto
   the target video id, skips any pre-roll, and turns English captions
-  on. Proven end to end (a full 4465-word track) on 2026-09-12.
+  on. On a gate the window goes to youtube.com and waits, patiently,
+  for you to sign in there (not in your everyday browser - the helper
+  keeps its own login), then fetches. Proven end to end on 2026-09-12:
+  a public 4465-word track, and a real members-only video (4506 words)
+  fetched after a live sign-in.
 
 ### Nothing leaves the machine
 
