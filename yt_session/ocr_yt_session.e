@@ -129,9 +129,20 @@ feature {NONE} -- Delivery
 				browser.navigate_to (urls.i_th (current_index))
 			elseif l_kind.same_string ("gate") then
 				if is_signed_in then
-					write_file (l_id + ".refused", l_payload)
-					print ("  refused (signed in, not a member): " + l_payload + "%N")
-					advance
+						-- Already signed in, yet this load shows the gate. A fresh
+						-- navigation often reports the membership wall for a moment
+						-- before the signed-in session is applied, so reload and
+						-- try again a few times before believing it. Only after
+						-- `Max_attempts' reloads still gate do we call it a real
+						-- refusal (genuinely not a member of this channel).
+					if attempts < Max_attempts then
+						print ("  gate on a signed-in load; reloading (try " + attempts.out + ")%N")
+						start_current
+					else
+						write_file (l_id + ".refused", l_payload)
+						print ("  refused (signed in, still gated after retries): " + l_payload + "%N")
+						advance
+					end
 				else
 					print ("  members-only; opening youtube.com to sign in%N")
 					browser.navigate_to ("https://www.youtube.com/")

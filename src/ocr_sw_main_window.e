@@ -471,6 +471,11 @@ feature {NONE} -- Building
 			tabs.add_page ("Engine", engine_page)
 			tabs.add_page ("Findings", findings_page)
 			tabs.add_page ("Maintenance", maintenance_page)
+				-- Fill the window vertically: the tab strip takes all the height
+				-- the root column has left after the toolbar and status card, so
+				-- each page (and any grid inside it that grows) stretches with the
+				-- window instead of sitting at natural height with dead space below.
+			tabs.set_grow (1.0)
 			a_root.put (tabs)
 		end
 

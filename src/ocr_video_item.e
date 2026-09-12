@@ -112,9 +112,18 @@ feature -- Access
 			end
 		end
 
+	is_session_fetching: BOOLEAN
+			-- Is a signed-in browser session fetching this row right now?
+			-- A transient flag over the real state, so the row reads
+			-- "fetching..." instead of its stale "refused" while the helper
+			-- window works. Cleared when the session decides the row.
+
 	status_caption: STRING_32
 			-- The state in words, with its detail.
 		do
+			if is_session_fetching then
+				Result := {STRING_32} "fetching through your signed-in browser..."
+			else
 			inspect state
 			when State_pending then
 				Result := {STRING_32} "waiting for lookup"
@@ -127,8 +136,17 @@ feature -- Access
 			else
 				Result := {STRING_32} "failed: " + detail
 			end
+			end
 		ensure
 			never_empty: not Result.is_empty
+		end
+
+	mark_session_running
+			-- The signed-in browser session has taken this row on.
+		do
+			is_session_fetching := True
+		ensure
+			fetching: is_session_fetching
 		end
 
 feature -- Status report
@@ -254,8 +272,10 @@ feature -- Basic operations
 				detail := run.last_error.twin
 			end
 			is_queued := False
+			is_session_fetching := False
 		ensure
 			decided: is_saved or is_failed
+			not_fetching: not is_session_fetching
 		end
 
 	mark_refused (a_reason: READABLE_STRING_GENERAL)
@@ -264,8 +284,10 @@ feature -- Basic operations
 			state := State_refused
 			create detail.make_from_string_general (a_reason)
 			is_queued := False
+			is_session_fetching := False
 		ensure
 			refused: is_refused
+			not_fetching: not is_session_fetching
 		end
 
 	path_in (a_folder: READABLE_STRING_GENERAL): STRING_32

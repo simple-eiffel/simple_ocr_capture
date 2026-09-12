@@ -421,6 +421,7 @@ feature -- Browser session (members-only)
 						-- NOT set_queued: that flag drives the normal anonymous
 						-- fetch loop, which would grab a public row before the
 						-- helper could. poll_session works from session_items.
+					ic.mark_session_running
 					l_ids.extend (ic.video_id)
 				end
 				launcher.start (l_ids)
