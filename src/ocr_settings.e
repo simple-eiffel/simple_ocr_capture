@@ -32,6 +32,7 @@ feature {NONE} -- Initialization
 			create output_folder.make_from_string_general (default_output_folder)
 			create text_file_name.make_from_string_general (Default_text_file_name)
 			create last_video_url.make_empty
+			use_browser_session := False
 			save_text := True
 			save_image := True
 			add_separators := True
@@ -126,6 +127,12 @@ feature -- Access: output
 	last_video_url: STRING_32
 			-- The YouTube link last looked up on the Video tab, so it is
 			-- back in the box on the next start.
+
+	use_browser_session: BOOLEAN
+			-- May the app fall back to the WebView2 sign-in helper for
+			-- members-only videos? Off by default: it opens a browser
+			-- window and uses the user's YouTube login, which is a
+			-- deliberate choice, never a silent one.
 
 feature -- Access: trigger
 
@@ -434,6 +441,13 @@ feature -- Element change
 			-- not accept an empty name, and a placeholder that is obviously not
 			-- a book title cannot silently append one book onto another's
 			-- transcript, which is the failure the reset exists to prevent.
+
+	set_use_browser_session (a_flag: BOOLEAN)
+		do
+			use_browser_session := a_flag
+		ensure
+			set: use_browser_session = a_flag
+		end
 
 	set_last_video_url (a_url: READABLE_STRING_GENERAL)
 		do
@@ -773,6 +787,7 @@ feature {NONE} -- Persistence implementation
 			Result.append ("  %"auto_advance%": " + auto_advance.out.as_lower + ",%N")
 			Result.append ("  %"advance_delay_ms%": " + advance_delay_ms.out + ",%N")
 			Result.append ("  %"last_video_url%": " + u.quoted (last_video_url) + ",%N")
+			Result.append ("  %"use_browser_session%": " + use_browser_session.out.as_lower + ",%N")
 			Result.append ("  %"capture_index%": " + capture_index.out + "%N")
 			Result.append ("}%N")
 		end
@@ -793,6 +808,7 @@ feature {NONE} -- Persistence implementation
 			if attached a_obj.string_item ({STRING_32} "last_video_url") as al_s then
 				last_video_url := al_s.twin
 			end
+			use_browser_session := boolean_from (a_obj, "use_browser_session", use_browser_session)
 			save_text := boolean_from (a_obj, "save_text", save_text)
 			save_image := boolean_from (a_obj, "save_image", save_image)
 			add_separators := boolean_from (a_obj, "add_separators", add_separators)

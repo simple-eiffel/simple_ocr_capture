@@ -4,6 +4,13 @@ Simple OCR Capture
 Capture a region of the screen, run it through a local OCR model, and append
 the text to a single file.
 
+New in 1.14.0: members-only videos. Turn on "Use my browser login for
+members-only videos" (Engine tab), or press "Fetch via My Browser
+Session" on the Video tab. A YouTube window opens carrying your own
+login; sign in once (it is remembered) and the app fetches the gated
+caption tracks from your session, writing each as a transcript marked
+members-only. Only YouTube's own requests leave the machine.
+
 New in 1.13.0: the Video tab is a queue. Paste one link or a whole
 list, press Add, and each row is looked up as it lands. Fetch All
 asks once where the files go and writes every ready video to its

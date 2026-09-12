@@ -377,6 +377,7 @@ feature -- Settings round trip
 			check_figures.set_checked (settings.extract_figures)
 			check_show_strip.set_checked (settings.show_strip)
 			check_show_thumb.set_checked (settings.show_thumbnail)
+			check_browser_session.set_checked (settings.use_browser_session)
 			check_ctrl.set_checked (settings.hotkey_modifiers.bit_and ({OCR_HOTKEY}.Mod_control) /= 0)
 			check_alt.set_checked (settings.hotkey_modifiers.bit_and ({OCR_HOTKEY}.Mod_alt) /= 0)
 			check_shift.set_checked (settings.hotkey_modifiers.bit_and ({OCR_HOTKEY}.Mod_shift) /= 0)
@@ -420,6 +421,7 @@ feature -- Settings round trip
 				settings.set_extract_figures (check_figures.is_checked)
 				settings.set_show_strip (check_show_strip.is_checked)
 				settings.set_show_thumbnail (check_show_thumb.is_checked)
+				settings.set_use_browser_session (check_browser_session.is_checked)
 				if not field_endpoint.text.is_empty then
 					settings.set_endpoint (narrowed (field_endpoint.text))
 				end
@@ -583,7 +585,10 @@ feature {NONE} -- Building
 				.add (create {SW_BUTTON}.make ("Remove", agent on_video_remove))
 				.add (create {SW_BUTTON}.make ("Clear Finished", agent on_video_clear_finished))
 			Result.put (row)
-			create video_hint.make_ui ("Fetch All asks once where the files go; each video is written to its own .md file, named from its title (edit the name above). Fetch Selected asks for that one video alone.")
+			create row.make
+			row := row.add (create {SW_BUTTON}.make ("Fetch via My Browser Session...", agent on_video_session))
+			Result.put (row)
+			create video_hint.make_ui ("Fetch All asks once where the files go; each video is written to its own .md file, named from its title (edit the name above). Fetch Selected asks for that one video alone. Fetch via My Browser Session opens a signed-in YouTube window and works for members-only videos.")
 			video_hint := video_hint.as_muted.with_wrap
 			Result.put (video_hint)
 			create video_preview.make (220.0)
@@ -654,6 +659,11 @@ feature {NONE} -- Building
 			create field_num_ctx.make (8192, 512, 131072, agent on_number_edited)
 			Result.put (labelled ("Context tokens", field_num_ctx))
 			Result.put (create {SW_BUTTON}.make ("Check Setup / Install Model", agent on_check_setup))
+			Result.put (create {SW_SEPARATOR}.make_labeled ("YouTube session (members-only videos)"))
+			create check_browser_session.make ("Use my browser login for members-only videos", False, Void)
+			check_browser_session.set_on_change (agent on_field_changed)
+			Result.put (check_browser_session)
+			Result.put ((create {SW_LABEL}.make_ui ("When on, a video a channel membership gates opens a signed-in YouTube window (WebView2) and its captions are fetched from your own session. The window appears only when needed; sign in once and it is remembered. Nothing but YouTube's own requests leaves this machine.")).as_muted.with_wrap)
 				-- trigger lives with the engine page: both are
 				-- set-once machinery
 			Result.put ((create {SW_LABEL}.make_ui ("Trigger")).as_muted)
@@ -890,7 +900,68 @@ feature -- Video queue (the composition root's tick calls this)
 						{STRING_32} "Fetch pass finished: " + queue.saved_count.out + {STRING_32} " saved, " + queue.refused_count.out + {STRING_32} " refused",
 						{STRING_32} "The files are in " + queue.folder)
 					show_video_preview
+					offer_session_fallback
 				end
+			elseif queue.is_session_active then
+				queue.poll_session
+				if not queue.is_session_active then
+					report (queue.last_message)
+					refresh_video_grid
+					note_video_refusals
+					show_video_preview
+					add_finding ({STRING_32} "info", {STRING_32} "video", queue.last_message,
+						{STRING_32} "Members-only transcripts are marked as such in their header")
+				end
+			end
+		end
+
+	offer_session_fallback
+			-- After a normal fetch, if some rows were gated and the user
+			-- has enabled the browser session, run it for those rows.
+		do
+			if settings.use_browser_session and then queue.session_available
+				and then queue.members_refused_count > 0 and then not queue.is_session_active
+			then
+				report ({STRING_32} "Some videos are members-only; opening your browser session for "
+					+ queue.members_refused_count.out + {STRING_32} " of them.")
+				queue.start_session (settings.output_folder, True)
+				refresh_video_grid
+			end
+		end
+
+	on_video_session
+			-- Explicit: fetch every not-yet-saved row through the signed-in
+			-- browser window (works for public and members-only alike).
+		do
+			if queue.is_busy then
+				report ("Still working - wait for the current pass to finish.")
+			elseif not queue.session_available then
+				report ("The sign-in helper (ocr_yt_session.exe) is not next to the application.")
+			elseif queue.session_candidates (False).is_empty then
+				report ("Nothing to fetch: every row is already saved or has no video id.")
+			else
+				confirm_output_then ("Fetch", first_ready_name, agent video_session_confirmed)
+			end
+		end
+
+	video_session_confirmed
+		do
+			if not settings.text_file_name.is_empty then
+					-- honour a name the prompt set, for the first candidate
+				if attached first_session_candidate as al then
+					al.set_file_name (settings.text_file_name)
+					al.set_file_name (queue.distinct_name (al.file_name, al))
+				end
+			end
+			queue.start_session (settings.output_folder, False)
+			refresh_video_grid
+			report (queue.last_message)
+		end
+
+	first_session_candidate: detachable OCR_VIDEO_ITEM
+		do
+			across queue.session_candidates (False) as ic until attached Result loop
+				Result := ic
 			end
 		end
 
@@ -1691,6 +1762,7 @@ feature {NONE} -- State
 	check_show_strip: SW_CHECK_BOX attribute create Result.make ("", False, Void) end
 	check_show_thumb: SW_CHECK_BOX attribute create Result.make ("", False, Void) end
 	check_ctrl: SW_CHECK_BOX attribute create Result.make ("", False, Void) end
+	check_browser_session: SW_CHECK_BOX attribute create Result.make ("", False, Void) end
 	check_alt: SW_CHECK_BOX attribute create Result.make ("", False, Void) end
 	check_shift: SW_CHECK_BOX attribute create Result.make ("", False, Void) end
 	check_outline_capture: SW_CHECK_BOX attribute create Result.make ("", False, Void) end

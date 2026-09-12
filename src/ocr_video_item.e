@@ -224,15 +224,8 @@ feature -- Basic operations
 			ready: is_ready
 			named: not file_name.is_empty
 			folder_given: not a_folder.is_empty
-		local
-			l_path: STRING_32
 		do
-			create l_path.make_from_string_general (a_folder)
-			if l_path.item (l_path.count) /= '\' then
-				l_path.append_character ('\')
-			end
-			l_path.append (file_name)
-			if run.fetch_and_save (l_path) then
+			if run.fetch_and_save (path_in (a_folder)) then
 				state := State_saved
 				detail := run.last_message.twin
 			else
@@ -243,6 +236,48 @@ feature -- Basic operations
 		ensure
 			decided: is_saved or is_failed
 			unqueued: not is_queued
+		end
+
+	session_fetch_into (a_json3: READABLE_STRING_32; a_folder: READABLE_STRING_GENERAL)
+			-- Write the transcript from a track the sign-in helper fetched.
+		require
+			probed: run.is_probed
+			named: not file_name.is_empty
+			folder_given: not a_folder.is_empty
+			json3_given: not a_json3.is_empty
+		do
+			if run.save_session_track (a_json3, path_in (a_folder)) then
+				state := State_saved
+				detail := run.last_message.twin
+			else
+				state := State_failed
+				detail := run.last_error.twin
+			end
+			is_queued := False
+		ensure
+			decided: is_saved or is_failed
+		end
+
+	mark_refused (a_reason: READABLE_STRING_GENERAL)
+			-- The sign-in helper could not get this one.
+		do
+			state := State_refused
+			create detail.make_from_string_general (a_reason)
+			is_queued := False
+		ensure
+			refused: is_refused
+		end
+
+	path_in (a_folder: READABLE_STRING_GENERAL): STRING_32
+			-- `a_folder' joined with `file_name'.
+		require
+			named: not file_name.is_empty
+		do
+			create Result.make_from_string_general (a_folder)
+			if not Result.is_empty and then Result.item (Result.count) /= '\' then
+				Result.append_character ('\')
+			end
+			Result.append (file_name)
 		end
 
 invariant

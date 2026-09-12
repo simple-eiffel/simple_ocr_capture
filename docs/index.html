@@ -140,9 +140,10 @@
                 <li><strong>The output prompt</strong> &mdash; every unattended run, a book or a
                     video, first shows the folder, file name and resulting path, and starts only
                     from that sheet</li>
-                <li><strong>Gated videos are refused, not guessed at</strong> &mdash; members-only
-                    and sign-in-gated videos are recognised from the player's answer and land in
-                    the findings grid with the remedy</li>
+                <li><strong>Members-only videos, through your own sign-in</strong> &mdash; a WebView2
+                    window carries your own YouTube login; sign in once and the gated caption tracks
+                    are fetched from your session, each transcript marked members-only. No cookie file
+                    is read; only YouTube's own requests leave the machine</li>
             </ul>
 
             <h3>Output and diagnostics</h3>
@@ -227,7 +228,8 @@ export SIMPLE_EIFFEL=/d/prod    <span class="comment"># where the simple_* libra
                 <li>
                     Video captions come from YouTube's caption track only. A members-only or
                     sign-in-gated video is refused, and a video with no CC button has nothing to
-                    fetch; the screen-capture and audio routes are designed, not built.
+                    fetch. Members-only videos are fetched through a signed-in WebView2 window
+                    (a one-time sign-in, then remembered); the screen-capture and audio routes are designed, not built.
                 </li>
             </ul>
         </section>

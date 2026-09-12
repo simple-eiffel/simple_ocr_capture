@@ -6,6 +6,46 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [1.14.0] - 2026-09-12 — members-only videos, through your own sign-in
+
+Larry: members-only videos too. YouTube hands a channel-gated caption
+track only to a signed-in member, and its own proof-of-origin gate
+means even a signed-in HTTP request comes back empty. So the app now
+signs in the way a person does: in a real browser window it hosts.
+
+### Added
+
+- **Fetch via My Browser Session** (Video tab) and **Use my browser
+  login for members-only videos** (Engine tab). A separate helper,
+  ocr_yt_session.exe, opens one WebView2 window carrying your own
+  YouTube login and walks the queue; each video's caption track is
+  captured from the player's own request (the only request that
+  carries the proof-of-origin token) and written to a transcript with
+  a header that says it came from your session. Sign in once in that
+  window; the profile persists, so later runs need no interaction.
+  With the toggle on, Fetch All falls back to the session
+  automatically for the videos a membership gated.
+- The members transcript is the same Markdown as any other, marked
+  "members-only, via your browser session" in its Source line.
+
+### How it works, and why a separate exe
+
+- WebView2's event loop is blocking and owns its own window, so the
+  helper is a standalone console exe the GUI spawns - the same
+  isolation the OCR worker uses for the model call - and WebView2 (and
+  simple_browser) stay out of the main binary entirely.
+- A direct fetch of the caption URL returns an empty body even from
+  inside the signed-in page. The helper instead patches the page's
+  fetch/XHR to capture the player's own caption request, locks onto
+  the target video id, skips any pre-roll, and turns English captions
+  on. Proven end to end (a full 4465-word track) on 2026-09-12.
+
+### Nothing leaves the machine
+
+Only YouTube's own requests, from your own browser session, go out.
+No cookie file is read or decrypted (current Edge/Chrome app-bind the
+cookie key, which is why the browser-window route is the durable one).
+
 ## [1.13.0] - 2026-09-11 — the Video queue
 
 Larry, after an evening of fetching one video at a time: a list.

@@ -223,6 +223,47 @@ feature -- Basic operations
 			saved_on_success: Result implies is_saved
 		end
 
+	save_session_track (a_json3: READABLE_STRING_32; a_path: READABLE_STRING_GENERAL): BOOLEAN
+			-- Assemble a transcript from `a_json3' (a track the sign-in
+			-- helper fetched for a members-only video) and append it to
+			-- `a_path'. The probe already holds the title, channel and
+			-- length, which are served even for gated videos.
+		require
+			probed: is_probed
+			json3_given: not a_json3.is_empty
+			path_given: not a_path.is_empty
+		do
+			last_error.wipe_out
+			saved_path.wipe_out
+			if not text.load_json3 (a_json3) then
+				last_error := text.last_error.twin
+			elseif not text.is_loaded then
+				last_error := {STRING_32} "The caption track came back but holds no words."
+			elseif not write_session_transcript (a_path) then
+				last_error := {STRING_32} "Could not write "
+				last_error.append_string_general (a_path)
+			else
+				create saved_path.make_from_string_general (a_path)
+				Result := True
+			end
+			if Result then
+				create last_message.make (160)
+				last_message.append_string_general ("Saved ")
+				last_message.append_string_general (text.word_count.out)
+				last_message.append_string_general (" words in ")
+				last_message.append_string_general (text.paragraphs.count.out)
+				last_message.append_string_general (" paragraphs (members-only, via your browser session) to ")
+				last_message.append (saved_path)
+				log.append ({STRING_32} "members transcript: " + last_message)
+			else
+				last_message := last_error.twin
+				log.append ({STRING_32} "members transcript FAILED: " + url + {STRING_32} " -> " + last_error)
+			end
+		ensure
+			error_on_failure: not Result implies not last_error.is_empty
+			saved_on_success: Result implies is_saved
+		end
+
 feature -- Conversion
 
 	safe_file_stem (a_title: READABLE_STRING_32): STRING_32
@@ -302,6 +343,72 @@ feature {NONE} -- Implementation
 		rescue
 			l_retried := True
 			retry
+		end
+
+	write_session_transcript (a_path: READABLE_STRING_GENERAL): BOOLEAN
+			-- Append the members-only header and paragraphs to `a_path'.
+		local
+			l_file: RAW_FILE
+			l_retried: BOOLEAN
+		do
+			if not l_retried then
+				create l_file.make_with_name (a_path)
+				if l_file.exists then
+					l_file.open_append
+					l_file.put_string ("%N%N")
+				else
+					l_file.create_read_write
+				end
+				l_file.put_string (utf8 (session_header (is_markdown_path (a_path))))
+				l_file.put_string (utf8 (text.plain_text))
+				l_file.put_string ("%N")
+				l_file.close
+				Result := True
+			end
+		rescue
+			l_retried := True
+			retry
+		end
+
+	session_header (a_markdown: BOOLEAN): STRING_32
+			-- The header for a members-only transcript; no track index is
+			-- needed because the gated probe still yields title and length.
+		local
+			l_now: DATE_TIME
+			l_src: STRING_32
+		do
+			create l_now.make_now
+			l_src := {STRING_32} "YouTube caption track (members-only, via your browser session)"
+			create Result.make (320)
+			if a_markdown then
+				Result.append_string_general ("# ")
+				Result.append (track.title)
+				Result.append_string_general ("%N%N| | |%N|---|---|%N| URL | https://www.youtube.com/watch?v=")
+				Result.append_string_general (track.video_id)
+				Result.append_string_general (" |%N| Channel | ")
+				Result.append (track.channel)
+				Result.append_string_general (" |%N| Length | ")
+				Result.append (text.clock_caption (track.length_seconds))
+				Result.append_string_general (" |%N| Source | ")
+				Result.append (l_src)
+				Result.append_string_general (" |%N| Fetched | ")
+				Result.append_string_general (l_now.out)
+				Result.append_string_general (" |%N%N")
+			else
+				Result.append_string_general ("===== ")
+				Result.append (track.title)
+				Result.append_string_general (" =====%NURL: https://www.youtube.com/watch?v=")
+				Result.append_string_general (track.video_id)
+				Result.append_string_general ("%NChannel: ")
+				Result.append (track.channel)
+				Result.append_string_general ("%NLength: ")
+				Result.append (text.clock_caption (track.length_seconds))
+				Result.append_string_general ("%NSource: ")
+				Result.append (l_src)
+				Result.append_string_general ("%NFetched: ")
+				Result.append_string_general (l_now.out)
+				Result.append_string_general ("%N%N")
+			end
 		end
 
 	header (a_track: INTEGER): STRING_32

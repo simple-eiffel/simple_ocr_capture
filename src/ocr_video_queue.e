@@ -26,6 +26,8 @@ feature {NONE} -- Initialization
 			create items.make (16)
 			create folder.make_empty
 			create last_message.make_empty
+			create launcher.make (a_settings)
+			create session_items.make (8)
 		end
 
 feature -- Access
@@ -130,7 +132,7 @@ feature -- Status report
 
 	is_busy: BOOLEAN
 		do
-			Result := has_pending_lookup or is_fetching
+			Result := has_pending_lookup or is_fetching or is_session_active
 		end
 
 	has_file_name (a_name: READABLE_STRING_32; a_except: detachable OCR_VIDEO_ITEM): BOOLEAN
@@ -349,7 +351,133 @@ feature -- Basic operations
 			distinct: not has_file_name (Result, a_owner)
 		end
 
+feature -- Browser session (members-only)
+
+	launcher: OCR_YT_SESSION_LAUNCHER
+			-- Spawns and reaps the sign-in helper.
+
+	is_session_active: BOOLEAN
+			-- Is a browser-session fetch under way?
+
+	session_available: BOOLEAN
+			-- Is the sign-in helper present to be run?
+		do
+			Result := launcher.is_available
+		end
+
+	members_refused_count: INTEGER
+			-- Rows YouTube gated behind a channel membership.
+		do
+			across items as ic loop
+				if ic.is_refused and then (ic.detail.has_substring ({STRING_32} "member")
+					or ic.detail.has_substring ({STRING_32} "LOGIN_REQUIRED"))
+				then
+					Result := Result + 1
+				end
+			end
+		end
+
+	session_candidates (a_only_members: BOOLEAN): ARRAYED_LIST [OCR_VIDEO_ITEM]
+			-- Rows to hand the sign-in helper: every not-yet-saved row with
+			-- a video id, or (when `a_only_members') only the ones a
+			-- membership gate refused.
+		do
+			create Result.make (8)
+			across
+				items as ic
+			loop
+				if not ic.is_saved and then not ic.video_id.is_empty and then run_probed (ic) then
+					if a_only_members then
+						if ic.is_refused and then (ic.detail.has_substring ({STRING_32} "member")
+							or ic.detail.has_substring ({STRING_32} "LOGIN_REQUIRED"))
+						then
+							Result.extend (ic)
+						end
+					elseif ic.is_ready or ic.is_refused then
+						Result.extend (ic)
+					end
+				end
+			end
+		end
+
+	start_session (a_folder: READABLE_STRING_GENERAL; a_only_members: BOOLEAN)
+			-- Spawn the sign-in helper for the candidate rows; the results
+			-- are ingested by `poll_session' when the helper finishes.
+		require
+			available: session_available
+			folder_given: not a_folder.is_empty
+		local
+			l_ids: ARRAYED_LIST [STRING_8]
+		do
+			session_items := session_candidates (a_only_members)
+			if session_items.is_empty then
+				last_message := {STRING_32} "Nothing to fetch through the browser session."
+			else
+				create folder.make_from_string_general (a_folder)
+				create l_ids.make (session_items.count)
+				across
+					session_items as ic
+				loop
+						-- NOT set_queued: that flag drives the normal anonymous
+						-- fetch loop, which would grab a public row before the
+						-- helper could. poll_session works from session_items.
+					l_ids.extend (ic.video_id)
+				end
+				launcher.start (l_ids)
+				if launcher.last_error.is_empty then
+					is_session_active := True
+					last_message := {STRING_32} "Sign-in window open - fetching " + session_items.count.out
+						+ {STRING_32} " video(s). Sign in there if asked."
+				else
+					is_session_active := False
+					last_message := launcher.last_error.twin
+				end
+			end
+		end
+
+	poll_session
+			-- On the tick: ingest results once the helper is done.
+		local
+			l_res: TUPLE [kind: INTEGER; content: STRING_32]
+			l_saved, l_refused: INTEGER
+		do
+			if is_session_active then
+				launcher.poll
+				if launcher.is_finished then
+					across
+						session_items as ic
+					loop
+						l_res := launcher.result_of (ic.video_id)
+						if l_res.kind = launcher.Kind_track and then not l_res.content.is_empty then
+							ic.session_fetch_into (l_res.content, folder)
+							if ic.is_saved then
+								l_saved := l_saved + 1
+							end
+						elseif l_res.kind = launcher.Kind_refused then
+							ic.mark_refused (l_res.content)
+							l_refused := l_refused + 1
+						else
+							ic.mark_refused ({STRING_32} "the sign-in window closed before this video was reached")
+							l_refused := l_refused + 1
+						end
+					end
+					is_session_active := False
+					last_message := {STRING_32} "Browser session done: " + l_saved.out
+						+ {STRING_32} " saved, " + l_refused.out + {STRING_32} " not available. Files are in " + folder
+				end
+			end
+		end
+
 feature {NONE} -- Implementation
+
+	session_items: ARRAYED_LIST [OCR_VIDEO_ITEM]
+			-- The rows handed to the current session run.
+
+	run_probed (a_item: OCR_VIDEO_ITEM): BOOLEAN
+			-- Has `a_item' been looked up (so it has title/length)?
+		do
+			Result := a_item.run.is_probed
+		end
 
 	settings: OCR_SETTINGS
 

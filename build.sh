@@ -104,9 +104,15 @@ case $MODE in
             echo -e "${RED}ERROR: Inno Setup not found at $ISCC${NC}"
             exit 1
         fi
-        # Finalize recreates F_code, and cairo.dll is not a build product:
-        # the installer script copies it from F_code, so put it there first.
+        # The members-only sign-in helper is a separate exe (WebView2).
+        echo -e "${BLUE}Finalizing the members-only helper...${NC}"
+        "$EC_SH" test -config "$ECF" -target ocr_yt_session
+        # Finalize recreates F_code, and these are not build products; the
+        # installer script copies them from F_code, so put them there first:
+        # cairo.dll (GUI), and the helper exe + WebView2 loader for the helper.
         cp "/d/prod/simple_cairo/cairo.dll" "$SCRIPT_DIR/EIFGENs/ocr_capture/F_code/"
+        cp "$SCRIPT_DIR/EIFGENs/ocr_yt_session/F_code/simple_ocr_capture.exe" "$SCRIPT_DIR/EIFGENs/ocr_capture/F_code/ocr_yt_session.exe"
+        cp "/d/prod/simple_browser/lib/WebView2Loader.dll" "$SCRIPT_DIR/EIFGENs/ocr_capture/F_code/"
         echo -e "${BLUE}Building the installer...${NC}"
         "$ISCC" "$SCRIPT_DIR/installer/simple_ocr_capture.iss"
         ;;

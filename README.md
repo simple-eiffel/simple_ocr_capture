@@ -78,6 +78,10 @@ first run; a discrete GPU with 12 GB or more of VRAM is strongly recommended.
 - **Members-only and sign-in-gated videos are recognised and refused** with the
   remedy in the findings grid; the signed-in route is designed, not yet built
 - `--captions <url> <out.txt>` does the same headless
+- **Members-only videos** — turn on the Engine-tab toggle or press "Fetch via My
+  Browser Session"; a WebView2 window carries your own YouTube login, you sign in
+  once, and the gated caption tracks are fetched from your session. No cookie file
+  is read; only YouTube's own requests leave the machine
 
 ### Output and diagnostics
 

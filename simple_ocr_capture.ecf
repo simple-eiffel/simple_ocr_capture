@@ -72,6 +72,19 @@
 		<cluster name="spike" location=".\spike\"/>
 	</target>
 
+	<!-- Members-only helper: a standalone console exe that hosts a WebView2
+	     window carrying the user's own YouTube login and fetches gated
+	     caption tracks. Kept OUT of the main app and the tests: only this
+	     target links simple_browser (and, through its default target,
+	     WebView2). Its one class lives in its own cluster so no other
+	     target compiles it. -->
+	<target name="ocr_yt_session" extends="simple_ocr_capture">
+		<root class="OCR_YT_SESSION" feature="make"/>
+		<setting name="console_application" value="true"/>
+		<library name="simple_browser" location="$SIMPLE_EIFFEL/simple_browser/simple_browser.ecf"/>
+		<cluster name="yt_session" location=".\yt_session\\"/>
+	</target>
+
 	<target name="ocr_cairo_gui" extends="simple_ocr_capture">
 		<root class="OCR_CAIRO_APP" feature="make"/>
 		<setting name="console_application" value="false"/>
