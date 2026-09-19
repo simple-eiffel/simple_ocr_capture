@@ -64,6 +64,53 @@ feature -- Conversion
 			has_both_quotes: Result.count >= 2
 		end
 
+	utf8_repaired (a_text: READABLE_STRING_32): STRING_32
+			-- `a_text' with UTF-8 byte sequences decoded to real characters.
+			--
+			-- SIMPLE_JSON_QUICK parses a STRING_8, so each raw UTF-8 byte in the
+			-- reply arrives as one STRING_32 character: an em dash comes back as
+			-- three characters rather than one. Reassembling the bytes and
+			-- decoding them properly undoes that. Characters above U+00FF cannot
+			-- have come from this path, so text that was already correct (or that
+			-- arrived via \u escapes) is returned untouched.
+		local
+			l_bytes: STRING_8
+			i: INTEGER
+			l_code: NATURAL_32
+			l_all_latin1: BOOLEAN
+		do
+			from
+				i := 1
+				l_all_latin1 := True
+			until
+				i > a_text.count or not l_all_latin1
+			loop
+				if a_text.code (i) > 0xFF then
+					l_all_latin1 := False
+				end
+				i := i + 1
+			end
+
+			if not l_all_latin1 then
+				Result := a_text.to_string_32
+			else
+				create l_bytes.make (a_text.count)
+				from i := 1 until i > a_text.count loop
+					l_code := a_text.code (i)
+					l_bytes.extend (l_code.to_integer_32.to_character_8)
+					i := i + 1
+				end
+				if {UTF_CONVERTER}.is_valid_utf_8_string_8 (l_bytes) then
+					Result := {UTF_CONVERTER}.utf_8_string_8_to_string_32 (l_bytes)
+				else
+						-- Not UTF-8 after all; keep exactly what arrived.
+					Result := a_text.to_string_32
+				end
+			end
+		ensure
+			attached_result: Result /= Void
+		end
+
 feature {NONE} -- Implementation
 
 	hex_digit (a_value: INTEGER): STRING_8

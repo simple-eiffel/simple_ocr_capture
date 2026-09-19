@@ -69,6 +69,8 @@ feature {NONE} -- Initialization
 				run_settings (l_args)
 			elseif l_args.argument_count >= 1 and then l_args.argument (1).same_string_general ("--captions") then
 				run_captions (l_args)
+			elseif l_args.argument_count >= 1 and then l_args.argument (1).same_string_general ("--channel") then
+				run_channel (l_args)
 			else
 				print_usage
 			end
@@ -113,6 +115,105 @@ feature {NONE} -- Modes
 						set_exit_code (1)
 					end
 				end
+			end
+		end
+
+	run_channel (a_args: ARGUMENTS_32)
+			-- Harvest every transcript a channel will give: the Video
+			-- tab's whole channel path with no window, so a long run can
+			-- be started from a script and so the live sweep can be
+			-- checked without clicking. Exit 1 when the run fails, 2 on
+			-- usage.
+			--
+			-- The loop here is the window's tick written out: the queue
+			-- gets its one lookup or one fetch, then the harvest gets its
+			-- step. Same order as OCR_SW_GUI.on_tick, for the same reason.
+		local
+			l_settings: OCR_SETTINGS
+			l_queue: OCR_VIDEO_QUEUE
+			l_harvest: OCR_CHANNEL_HARVEST
+			l_said: STRING_32
+		do
+			if a_args.argument_count < 2 then
+				io.error.put_string ("usage: --channel <channel-url-or-handle> [<root-folder>] [--folder <name>] [--no-categories]%N")
+				set_exit_code (2)
+			else
+				create l_settings
+				if a_args.argument_count >= 3 and then not a_args.argument (3).starts_with ("--") then
+					l_settings.set_channel_root (a_args.argument (3))
+				end
+				if has_flag (a_args, "--no-categories") then
+					l_settings.set_categorize_channel (False)
+				end
+				if attached flag_value (a_args, "--folder") as al_folder and then not al_folder.is_empty then
+					l_settings.set_channel_folder_name (al_folder)
+				end
+				create l_queue.make (l_settings)
+				create l_harvest.make (l_settings, l_queue)
+				create l_said.make_empty
+				if not l_harvest.start (a_args.argument (2)) then
+					io.error.put_string (utf8 (l_harvest.last_error))
+					io.error.put_new_line
+					set_exit_code (1)
+				else
+					from
+					until
+						not l_harvest.is_running
+					loop
+						if l_queue.has_pending_lookup then
+							l_queue.look_up_next
+						elseif l_queue.is_fetching then
+							l_queue.fetch_next
+						end
+						l_harvest.step
+						if not l_harvest.progress_line.same_string (l_said) then
+							l_said := l_harvest.progress_line
+							print (utf8 (l_said))
+							print ("%N")
+						end
+					end
+					if l_harvest.is_failed then
+						io.error.put_string (utf8 (l_harvest.last_error))
+						io.error.put_new_line
+						set_exit_code (1)
+					else
+						print (utf8 (l_harvest.done_line))
+						print ("%N")
+					end
+				end
+			end
+		end
+
+	flag_value (a_args: ARGUMENTS_32; a_flag: READABLE_STRING_GENERAL): detachable STRING_32
+			-- The argument after `a_flag'; Void when the flag is absent
+			-- or nothing follows it.
+		local
+			i: INTEGER
+		do
+			from
+				i := 2
+			until
+				i > a_args.argument_count or attached Result
+			loop
+				if a_args.argument (i).same_string_general (a_flag) and then i < a_args.argument_count then
+					Result := a_args.argument (i + 1).twin
+				end
+				i := i + 1
+			end
+		end
+
+	has_flag (a_args: ARGUMENTS_32; a_flag: READABLE_STRING_GENERAL): BOOLEAN
+			-- Is `a_flag' among the arguments?
+		local
+			i: INTEGER
+		do
+			from
+				i := 2
+			until
+				i > a_args.argument_count or Result
+			loop
+				Result := a_args.argument (i).same_string_general (a_flag)
+				i := i + 1
 			end
 		end
 
@@ -964,6 +1065,7 @@ feature {NONE} -- Modes
 			print ("  --images list|delete|move <folder> [drive]  the ocr_* images in a folder%N")
 			print ("  --settings [drive]            print persisted settings; with an argument, store it first%N")
 			print ("  --captions <url> <out-file>   fetch a YouTube video's caption track as a transcript (.md for Markdown)%N")
+			print ("  --channel <channel> [<root>] [--folder <name>] [--no-categories]  harvest every transcript a channel lists under Videos%N")
 		end
 
 feature {NONE} -- Constants

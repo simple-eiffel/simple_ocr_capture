@@ -181,6 +181,45 @@ feature -- Test: OCR_VIDEO_RUN
 			assert_false ("txt path", l_run.is_markdown_path ("C:\x\Talk.txt"))
 		end
 
+	test_safe_file_stem_caps_a_title_that_breaks_on_the_boundary
+			-- A space landing one short of the cap used to overshoot it.
+			--
+			-- The old loop tested the cap only at the top but could append
+			-- TWO characters in a pass - a held-over space, then the
+			-- character after it - so a title with a space at exactly
+			-- `Stem_cap' - 1 came out one character too long and the
+			-- routine failed its own postcondition. The existing cap test
+			-- could not catch it: 200 identical characters have no space
+			-- in them. Found by the first channel harvest, 125 titles in.
+		note
+			testing: "covers/{OCR_VIDEO_RUN}.safe_file_stem"
+		local
+			l_run: OCR_VIDEO_RUN
+			l_title: STRING_32
+			i: INTEGER
+		do
+			create l_run.make (create {OCR_SETTINGS})
+				-- Every offset a space can land on, not just the bad one:
+				-- the boundary is what broke, so walk across it.
+			from
+				i := l_run.Stem_cap - 4
+			until
+				i > l_run.Stem_cap + 4
+			loop
+				create l_title.make_filled ('x', i)
+				l_title.append_string_general (" and more words after the cap")
+				assert_true ("capped with a space at offset " + i.out,
+					l_run.safe_file_stem (l_title).count <= l_run.Stem_cap)
+				i := i + 1
+			end
+			create l_title.make_filled ('x', l_run.Stem_cap - 1)
+			l_title.append_string_general (" a")
+			assert_integers_equal ("the exact case that failed", l_run.Stem_cap - 1,
+				l_run.safe_file_stem (l_title).count)
+			assert_false ("and no trailing space is left behind",
+				l_run.safe_file_stem (l_title).item (l_run.safe_file_stem (l_title).count).is_space)
+		end
+
 	test_blocking_before_probe
 		note
 			testing: "covers/{OCR_VIDEO_RUN}.blocking_reason"

@@ -70,18 +70,34 @@ first run; a discrete GPU with 12 GB or more of VRAM is strongly recommended.
 
 ### Video
 
-- **YouTube captions to transcript** — paste one link or a whole list on the
-  Video tab; each is looked up as it lands (title, channel, length, caption
-  track), then Fetch All writes every ready video to its own Markdown file in
-  one folder, about a second each: no playback, no OCR, no browser, no Python.
-  Pure Eiffel over WinHTTP, the events streamed through simple_json
-- **Members-only and sign-in-gated videos are recognised and refused** with the
-  remedy in the findings grid; the signed-in route is designed, not yet built
-- `--captions <url> <out.txt>` does the same headless
+- **A whole channel in one go** — give the Video tab a channel (`@handle`, a
+  `/channel/UC...` link, a legacy `/c/` or `/user/` link, or just the name) and
+  press **Harvest Channel**. Every video the channel lists under **Videos** is
+  collected, then fetched in batches of five, into a folder named after the
+  channel. Measured against `@BibleLine`: 539 videos listed in 18 pages in 5.6
+  seconds. No browser, no API key, no yt-dlp — YouTube's own browse endpoint
+  over WinHTTP. Shorts are not included; the Videos tab does not list them
+- **Categories from your own machine** — the local model reads the harvested
+  titles, names the categories that fit *that* channel, and files every video
+  under one of them. Nothing is sent anywhere, and there is nothing to
+  configure: the first text model your Ollama holds is used. A title it will
+  not confidently place goes to `Uncategorized` rather than being guessed at
+- **Harvested transcripts carry YAML front matter** — title, channel, category,
+  URL, video id, date and tags — and stay flat in one folder per channel, with
+  an index grouping them by category. Re-run the same channel later and only
+  the new videos are fetched: each folder keeps a manifest of the video ids
+  already written, matched on the id, not the title
+- **YouTube captions to transcript** — or paste one link or a whole list; each
+  is looked up as it lands (title, channel, length, caption track), then Fetch
+  All writes every ready video to its own Markdown file in one folder, about a
+  second each: no playback, no OCR, no browser, no Python. Pure Eiffel over
+  WinHTTP, the events streamed through simple_json
 - **Members-only videos** — turn on the Engine-tab toggle or press "Fetch via My
   Browser Session"; a WebView2 window carries your own YouTube login, you sign in
   once, and the gated caption tracks are fetched from your session. No cookie file
   is read; only YouTube's own requests leave the machine
+- `--captions <url> <out.txt>` fetches one video headless;
+  `--channel <channel> [<root>] [--no-categories]` runs a whole channel the same way
 
 ### Output and diagnostics
 
@@ -181,10 +197,17 @@ path that is not on `PATH`, so a finalized binary fails with a bare "cURL issue"
   the advance box needs re-dragging.
 - The window is tuned for a 150% display and may look oversized at 100%. It is
   resizable; the chosen size is not yet remembered.
-- Video captions come from YouTube's caption track only. A members-only or
-  sign-in-gated video is refused (the player will not hand its track to an
-  anonymous request), and a video with no CC button has nothing to fetch; the
-  screen-capture and audio routes in FEASIBILITY-video-captions.md are not built.
+- Video captions come from YouTube's caption track only. A video with no CC
+  button has nothing to fetch; the screen-capture and audio routes in
+  FEASIBILITY-video-captions.md are not built. A members-only video needs the
+  browser-session route above — without it the player will not hand its track
+  to an anonymous request.
+- A channel harvest reads the **Videos** tab. A channel that puts its content
+  in playlists or streams rather than there will list fewer videos than you
+  expect, and Shorts are never included.
+- The category pass needs a text model in Ollama. Without one the harvest says
+  so and fetches everything under `Uncategorized` rather than stopping — the
+  transcripts are the point, the filing is a convenience.
 
 ---
 

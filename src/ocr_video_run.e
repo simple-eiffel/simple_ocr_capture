@@ -55,6 +55,19 @@ feature -- Access
 	saved_path: STRING_32
 			-- Where the last `fetch_and_save' wrote; empty until it has.
 
+	front_matter: STRING_32
+			-- YAML to open a Markdown transcript with, its --- fences
+			-- included; empty, and then nothing is written.
+			--
+			-- The channel harvest sets this so a vault can sort a
+			-- transcript by its channel and its category without the
+			-- file having to live in a folder named after either. It
+			-- stays empty for a video fetched on its own, so those files
+			-- keep the shape they have always had.
+		attribute
+			create Result.make_empty
+		end
+
 feature -- Status report
 
 	is_probed: BOOLEAN
@@ -154,6 +167,16 @@ feature -- Status report
 			-- Does `a_path' name a Markdown file?
 		do
 			Result := a_path.as_lower.ends_with (".md")
+		end
+
+feature -- Element change
+
+	set_front_matter (a_yaml: READABLE_STRING_GENERAL)
+			-- Open the next Markdown transcript with `a_yaml'.
+		do
+			create front_matter.make_from_string_general (a_yaml)
+		ensure
+			set: front_matter.same_string_general (a_yaml)
 		end
 
 feature -- Basic operations
@@ -275,11 +298,20 @@ feature -- Conversion
 			c: CHARACTER_32
 			l_pending: BOOLEAN
 		do
+				-- The whole title is cleaned first and cut to length after,
+				-- rather than stopping the loop at `Stem_cap'. One pass of
+				-- that loop can append TWO characters - a held-over space
+				-- and then the character after it - so a cap tested only at
+				-- the top can be overshot by one, and the postcondition
+				-- below then fails. It takes a title longer than the cap
+				-- with a space at exactly the wrong offset, which is why
+				-- the single-video path never met it and the first channel
+				-- harvest did, 125 titles in.
 			create Result.make (a_title.count.min (Stem_cap))
 			from
 				i := 1
 			until
-				i > a_title.count or Result.count >= Stem_cap
+				i > a_title.count
 			loop
 				c := a_title.item (i)
 				if c.is_space then
@@ -294,6 +326,9 @@ feature -- Conversion
 					Result.append_character (c)
 				end
 				i := i + 1
+			end
+			if Result.count > Stem_cap then
+				Result.keep_head (Stem_cap)
 			end
 			Result.right_adjust
 			if Result.is_empty then
@@ -320,17 +355,26 @@ feature {NONE} -- Implementation
 			-- creating it when absent. False when the write fails.
 		local
 			l_file: RAW_FILE
-			l_retried: BOOLEAN
+			l_retried, l_existed: BOOLEAN
 		do
 			if not l_retried then
 				create l_file.make_with_name (a_path)
-				if l_file.exists then
+				l_existed := l_file.exists
+				if l_existed then
 					l_file.open_append
 					l_file.put_string ("%N%N")
 				else
 					l_file.create_read_write
 				end
 				if is_markdown_path (a_path) then
+						-- Front matter has to be the very first thing in the
+						-- file or a vault will not read it, so it goes in only
+						-- when this transcript is starting the file. Asked
+						-- before the open, because by now the file is there
+						-- either way.
+					if not front_matter.is_empty and then not l_existed then
+						l_file.put_string (utf8 (front_matter))
+					end
 					l_file.put_string (utf8 (markdown_header (a_track)))
 				else
 					l_file.put_string (utf8 (header (a_track)))

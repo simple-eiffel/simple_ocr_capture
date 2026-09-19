@@ -125,6 +125,9 @@ feature {NONE} -- The clock
 				poll_pull
 				poll_auto_run
 				main_window.poll_video
+					-- After the queue, never before: the harvest decides its
+					-- next move from the queue's state.
+				main_window.poll_channel
 				poll_strip_health
 				if is_awaiting_runtime then
 					poll_runtime

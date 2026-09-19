@@ -209,6 +209,16 @@ feature -- Element change
 			set: is_queued = a_flag
 		end
 
+	set_front_matter (a_yaml: READABLE_STRING_GENERAL)
+			-- Open this row's Markdown transcript with `a_yaml'. The
+			-- channel harvest uses it to record the channel and the
+			-- category; a row added by hand leaves it empty.
+		do
+			run.set_front_matter (a_yaml)
+		ensure
+			set: run.front_matter.same_string_general (a_yaml)
+		end
+
 feature -- Basic operations
 
 	look_up

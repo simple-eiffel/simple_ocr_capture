@@ -133,8 +133,21 @@
 
             <h3>Video</h3>
             <ul>
-                <li><strong>YouTube captions to transcript</strong> &mdash; paste one link or a
-                    whole list on the Video tab; each is looked up as it lands, then Fetch All
+                <li><strong>A whole channel in one go</strong> &mdash; give the Video tab a channel
+                    (a <code>@handle</code>, a <code>/channel/</code> link, or just the name) and press
+                    Harvest Channel. Every video it lists under Videos is collected, then fetched in
+                    batches of five into a folder named after the channel. Measured against one
+                    channel: 539 videos listed in 18 pages in 5.6 seconds. No browser, no API key</li>
+                <li><strong>Categories from your own machine</strong> &mdash; the local model reads the
+                    harvested titles, names the categories that fit <em>that</em> channel, and files
+                    every video under one of them. Nothing is sent anywhere and there is nothing to
+                    configure. Each transcript opens with YAML front matter naming its channel and
+                    category, and the folder gets an index grouping them</li>
+                <li><strong>Re-run a channel and only the new videos are fetched</strong> &mdash; each
+                    folder keeps a manifest of the video ids already written, matched on the id
+                    rather than the title</li>
+                <li><strong>YouTube captions to transcript</strong> &mdash; or paste one link or a
+                    whole list; each is looked up as it lands, then Fetch All
                     writes every ready video to its own Markdown file, about a second each:
                     no playback, no OCR, no browser. Pure Eiffel over WinHTTP</li>
                 <li><strong>The output prompt</strong> &mdash; every unattended run, a book or a
@@ -226,10 +239,17 @@ export SIMPLE_EIFFEL=/d/prod    <span class="comment"># where the simple_* libra
                     at 100%. It is freely resizable; the chosen size is not yet remembered.
                 </li>
                 <li>
-                    Video captions come from YouTube's caption track only. A members-only or
-                    sign-in-gated video is refused, and a video with no CC button has nothing to
-                    fetch. Members-only videos are fetched through a signed-in WebView2 window
-                    (a one-time sign-in, then remembered); the screen-capture and audio routes are designed, not built.
+                    Video captions come from YouTube's caption track only. A video with no CC
+                    button has nothing to fetch. Members-only videos are fetched through a
+                    signed-in WebView2 window (a one-time sign-in, then remembered); the
+                    screen-capture and audio routes are designed, not built.
+                </li>
+                <li>
+                    A channel harvest reads the <strong>Videos</strong> tab. A channel that keeps
+                    its content in playlists or streams rather than there will list fewer videos
+                    than you expect, and Shorts are never included. The category pass needs a text
+                    model in Ollama; without one the harvest says so and fetches everything under
+                    <code>Uncategorized</code> rather than stopping.
                 </li>
             </ul>
         </section>

@@ -6,6 +6,69 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [1.15.0] - 2026-09-19 — point at a channel, get every transcript
+
+Larry: a channel, not a link. Clicking Share on five hundred videos to
+collect their URLs is the work; the fetching was already built. So the
+Video tab now takes a channel and does the collecting itself.
+
+### Added
+
+- **Harvest Channel** (Video tab). Give a channel — a `@handle`, a
+  `/channel/UC...` link, one of the legacy `/c/` or `/user/` forms, or
+  just the channel's name — and every video it lists under **Videos**
+  is harvested. Measured against `@BibleLine` on 2026-09-19: 539
+  videos listed in 18 pages in 5.6 seconds, then transcripts written
+  at about a video a second.
+- The listing is read through YouTube's own browse endpoint, one page
+  per tick, so the window stays alive across a channel that takes
+  twenty of them. No browser, no API key, no yt-dlp. Shorts are not
+  included: the Videos tab does not list them.
+- Fetching goes through the existing queue a **batch at a time**
+  (default 5, settable 1–50), so YouTube and the machine are each
+  asked for a handful rather than for five hundred. Everything the
+  queue already knew — the caption-track fetch, the file naming, the
+  signed-in fallback for members-only videos — applies unchanged.
+- **Categories from the local model.** With *Let the local model sort
+  the videos into categories* on, the model reads the harvested titles
+  and names the categories that fit **this** channel, then files every
+  video under one of them. Nothing is sent anywhere: it runs on the
+  same local Ollama the OCR side uses, and the model is found rather
+  than configured — the first text model Ollama holds is taken, so
+  there is no second thing to set up. A title it will not place goes
+  to `Uncategorized` rather than being guessed at.
+- Each harvested transcript opens with **YAML front matter** naming
+  its title, channel, category, URL, video id and harvest date, plus
+  `youtube-transcript`, channel and category tags. Files stay flat in
+  one folder per channel, so re-categorising later never moves a file,
+  and the folder also gets an **index** grouping every transcript
+  under its category. A transcript fetched for a single video is
+  unchanged — it gets no front matter.
+- **Re-running a channel is the ordinary case.** Each channel folder
+  keeps a manifest of the video ids already written, matched on the id
+  rather than the title, so a second harvest a month later fetches
+  only what is new. A video YouTube refused — members-only, or no
+  captions at all — is deliberately *not* recorded, so turning on the
+  browser session and running again picks it up.
+- `--channel <channel> [<root>] [--no-categories]` does the whole run
+  headlessly, for a script or a scheduled job.
+
+### Changed
+
+- `OCR_VIDEO_RUN` takes optional front matter for a Markdown
+  transcript. Empty for anything but a harvest, so single-video files
+  keep exactly the shape they had.
+- The UTF-8 repair the Ollama replies need moved from `OCR_ENGINE` to
+  `OCR_JSON_UTIL`, which both callers now share.
+
+### Notes
+
+- `youtubei/v1/browse` needs the **WEB** client. The ANDROID client
+  the caption fetch uses answers it with HTTP 400 — the exact opposite
+  of the caption-track URLs, where WEB returns an empty body and
+  ANDROID works.
+
+
 ## [1.14.0] - 2026-09-12 — members-only videos, through your own sign-in
 
 Larry: members-only videos too. YouTube hands a channel-gated caption

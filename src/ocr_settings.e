@@ -33,6 +33,12 @@ feature {NONE} -- Initialization
 			create text_file_name.make_from_string_general (Default_text_file_name)
 			create last_video_url.make_empty
 			use_browser_session := False
+			create last_channel_url.make_empty
+			create channel_root.make_empty
+			create channel_folder_name.make_empty
+			create category_model.make_empty
+			channel_batch_size := Default_channel_batch_size
+			categorize_channel := True
 			save_text := True
 			save_image := True
 			add_separators := True
@@ -133,6 +139,71 @@ feature -- Access: output
 			-- members-only videos? Off by default: it opens a browser
 			-- window and uses the user's YouTube login, which is a
 			-- deliberate choice, never a silent one.
+
+feature -- Access: channel harvest
+
+	last_channel_url: STRING_32
+			-- The channel last harvested, so it is back in the box on
+			-- the next start.
+
+	channel_root: STRING_32
+			-- The folder a harvest builds its channel folders under.
+			-- Empty until set: `channel_root_or_default' answers for it.
+
+	channel_folder_name: STRING_32
+			-- What to call the folder a harvest writes into, instead of
+			-- the channel's own name. Empty, and the channel's name is
+			-- used, which is what almost everyone wants.
+			--
+			-- It exists for the vault that already keeps notes about a
+			-- channel in a folder named after it: the transcripts then
+			-- want to go in a "Transcripts" below those notes rather
+			-- than beside them. Set it, and a later harvest of that
+			-- channel finds its manifest in the same place and fetches
+			-- only what is new - which moving the folder by hand
+			-- afterwards would break.
+
+	channel_batch_size: INTEGER
+			-- Videos a harvest looks up and fetches before it pauses.
+			-- YouTube and the machine both prefer being asked in
+			-- handfuls rather than for five hundred at once.
+
+	categorize_channel: BOOLEAN
+			-- Should the local model read the harvested titles and file
+			-- each video under a category of its own devising?
+
+	category_model: STRING_8
+			-- The text model that does the filing. Empty means "find
+			-- one": OCR_TITLE_CATEGORIZER asks Ollama what it has and
+			-- takes the first model that is not an OCR or vision one,
+			-- so nothing here has to be configured to work.
+
+	Default_channel_batch_size: INTEGER = 5
+
+	Max_channel_batch_size: INTEGER = 50
+
+	channel_root_or_default: STRING_32
+			-- Where channel folders go: `channel_root' when it is set,
+			-- otherwise a YouTube folder beside the capture output.
+		local
+			l_env: EXECUTION_ENVIRONMENT
+		do
+			if not channel_root.is_empty then
+				Result := channel_root.twin
+			else
+				create l_env
+				create Result.make (64)
+				if attached l_env.item ("USERPROFILE") as al_home and then not al_home.is_empty then
+					Result.append_string_general (al_home)
+					Result.append_string_general ("\Documents")
+				else
+					Result.append (output_folder)
+				end
+				Result.append_string_general ("\YouTube Transcripts")
+			end
+		ensure
+			never_empty: not Result.is_empty
+		end
 
 feature -- Access: trigger
 
@@ -454,6 +525,53 @@ feature -- Element change
 			create last_video_url.make_from_string_general (a_url)
 		ensure
 			set: last_video_url.same_string_general (a_url)
+		end
+
+	set_last_channel_url (a_url: READABLE_STRING_GENERAL)
+		do
+			create last_channel_url.make_from_string_general (a_url)
+		ensure
+			set: last_channel_url.same_string_general (a_url)
+		end
+
+	set_channel_folder_name (a_name: READABLE_STRING_GENERAL)
+			-- Call the harvest folder `a_name'; empty restores the
+			-- channel's own name.
+		do
+			create channel_folder_name.make_from_string_general (a_name)
+		ensure
+			set: channel_folder_name.same_string_general (a_name)
+		end
+
+	set_channel_root (a_folder: READABLE_STRING_GENERAL)
+		do
+			create channel_root.make_from_string_general (a_folder)
+		ensure
+			set: channel_root.same_string_general (a_folder)
+		end
+
+	set_channel_batch_size (a_size: INTEGER)
+			-- How many videos a harvest takes at a time.
+		require
+			positive: a_size >= 1
+		do
+			channel_batch_size := a_size
+		ensure
+			set: channel_batch_size = a_size
+		end
+
+	set_categorize_channel (a_flag: BOOLEAN)
+		do
+			categorize_channel := a_flag
+		ensure
+			set: categorize_channel = a_flag
+		end
+
+	set_category_model (a_model: READABLE_STRING_8)
+		do
+			create category_model.make_from_string (a_model)
+		ensure
+			set: category_model.same_string (a_model)
 		end
 
 	set_text_file_name (a_name: READABLE_STRING_GENERAL)
@@ -788,6 +906,12 @@ feature {NONE} -- Persistence implementation
 			Result.append ("  %"advance_delay_ms%": " + advance_delay_ms.out + ",%N")
 			Result.append ("  %"last_video_url%": " + u.quoted (last_video_url) + ",%N")
 			Result.append ("  %"use_browser_session%": " + use_browser_session.out.as_lower + ",%N")
+			Result.append ("  %"last_channel_url%": " + u.quoted (last_channel_url) + ",%N")
+			Result.append ("  %"channel_root%": " + u.quoted (channel_root) + ",%N")
+			Result.append ("  %"channel_folder_name%": " + u.quoted (channel_folder_name) + ",%N")
+			Result.append ("  %"channel_batch_size%": " + channel_batch_size.out + ",%N")
+			Result.append ("  %"categorize_channel%": " + categorize_channel.out.as_lower + ",%N")
+			Result.append ("  %"category_model%": " + u.quoted (category_model) + ",%N")
 			Result.append ("  %"capture_index%": " + capture_index.out + "%N")
 			Result.append ("}%N")
 		end
@@ -809,6 +933,25 @@ feature {NONE} -- Persistence implementation
 				last_video_url := al_s.twin
 			end
 			use_browser_session := boolean_from (a_obj, "use_browser_session", use_browser_session)
+			if attached a_obj.string_item ({STRING_32} "last_channel_url") as al_s then
+				last_channel_url := al_s.twin
+			end
+			if attached a_obj.string_item ({STRING_32} "channel_root") as al_s then
+				channel_root := al_s.twin
+			end
+			if attached a_obj.string_item ({STRING_32} "channel_folder_name") as al_s then
+				channel_folder_name := al_s.twin
+			end
+			channel_batch_size := integer_from (a_obj, "channel_batch_size", channel_batch_size)
+			if channel_batch_size < 1 or channel_batch_size > Max_channel_batch_size then
+					-- A batch of nothing would stall the harvest; a batch of
+					-- hundreds is what batching exists to prevent.
+				channel_batch_size := Default_channel_batch_size
+			end
+			categorize_channel := boolean_from (a_obj, "categorize_channel", categorize_channel)
+			if attached a_obj.string_item ({STRING_32} "category_model") as al_s then
+				category_model := narrowed (al_s)
+			end
 			save_text := boolean_from (a_obj, "save_text", save_text)
 			save_image := boolean_from (a_obj, "save_image", save_image)
 			add_separators := boolean_from (a_obj, "add_separators", add_separators)
@@ -960,5 +1103,9 @@ invariant
 	timeout_positive: ocr_timeout_seconds > 0
 	context_usable: num_ctx >= 4096
 	prediction_positive: num_predict > 0
+	channel_strings_attached: last_channel_url /= Void and channel_root /= Void
+		and channel_folder_name /= Void
+		and category_model /= Void
+	channel_batch_usable: channel_batch_size >= 1 and channel_batch_size <= Max_channel_batch_size
 
 end

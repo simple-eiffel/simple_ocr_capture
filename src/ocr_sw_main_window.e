@@ -39,6 +39,7 @@ feature {NONE} -- Initialization
 			cycle := a_cycle
 			status_strip := a_strip
 			queue := a_queue
+			create harvest.make (a_settings, a_queue)
 			create theme.make_dark
 			create window.make ("Simple OCR Capture " + {OCR_VERSION}.Version, 120, 60, 980, 900, theme)
 			create findings_rows.make (16)
@@ -378,6 +379,11 @@ feature -- Settings round trip
 			check_show_strip.set_checked (settings.show_strip)
 			check_show_thumb.set_checked (settings.show_thumbnail)
 			check_browser_session.set_checked (settings.use_browser_session)
+			field_channel_url.set_text (settings.last_channel_url)
+			field_channel_root.set_text (settings.channel_root_or_default)
+			field_channel_batch.set_value (settings.channel_batch_size)
+			check_categorize.set_checked (settings.categorize_channel)
+			channel_status.set_text (harvest.progress_line)
 			check_ctrl.set_checked (settings.hotkey_modifiers.bit_and ({OCR_HOTKEY}.Mod_control) /= 0)
 			check_alt.set_checked (settings.hotkey_modifiers.bit_and ({OCR_HOTKEY}.Mod_alt) /= 0)
 			check_shift.set_checked (settings.hotkey_modifiers.bit_and ({OCR_HOTKEY}.Mod_shift) /= 0)
@@ -555,6 +561,37 @@ feature {NONE} -- Building
 		do
 			create Result.make
 			Result := Result.with_gap (10.0)
+			Result.put (create {SW_SEPARATOR}.make_labeled ("Whole channel"))
+			Result.put ((create {SW_LABEL}.make_ui ("Give a channel - a @handle, a /channel/ link, or just the name - and every video it lists under Videos is harvested: the listing is read a page at a time, the local model reads the titles and names categories for this channel, and the transcripts are written in batches to a folder named after the channel. Run it again later and only the new videos are fetched.")).as_muted.with_wrap)
+			create field_channel_url.make_single_line ("")
+			field_channel_url.set_spellcheck (False)
+			field_channel_url.set_grow (1.0)
+			create row.make
+			row := row.add (labelled ("Channel", field_channel_url))
+			row.children.first.set_grow (1.0)
+			create button_channel.make ("Harvest Channel", agent on_channel_harvest)
+			button_channel.set_kind ({SW_BUTTON}.Kind_primary)
+			row := row.add (button_channel)
+			row := row.add (create {SW_BUTTON}.make ("Stop", agent on_channel_stop))
+			Result.put (row)
+			create field_channel_root.make_single_line ("")
+			field_channel_root.set_spellcheck (False)
+			field_channel_root.set_grow (1.0)
+			create row.make
+			row := row.add (labelled ("Into folder", field_channel_root))
+			row.children.first.set_grow (1.0)
+			row := row.add (create {SW_BUTTON}.make ("Browse...", agent on_channel_browse))
+			Result.put (row)
+			create field_channel_batch.make (settings.Default_channel_batch_size, 1, settings.Max_channel_batch_size, agent on_channel_batch_changed)
+			create check_categorize.make ("Let the local model sort the videos into categories", True, agent on_categorize_changed)
+			create row.make
+			row := row.add (labelled ("Batch size", field_channel_batch))
+				.add (check_categorize)
+			Result.put (row)
+			create channel_status.make_ui ("")
+			channel_status := channel_status.as_muted.with_wrap
+			Result.put (channel_status)
+			Result.put (create {SW_SEPARATOR}.make_labeled ("Single videos"))
 			Result.put ((create {SW_LABEL}.make_ui ("Paste YouTube links, one or many. Each is looked up as it lands; Fetch writes every ready one to its own Markdown file. Nothing but the two requests the player itself makes leaves this machine.")).as_muted.with_wrap)
 			create field_video_url.make_single_line ("")
 			field_video_url.set_spellcheck (False)
@@ -971,6 +1008,127 @@ feature -- Video queue (the composition root's tick calls this)
 		do
 			across queue.session_candidates (False) as ic until attached Result loop
 				Result := ic
+			end
+		end
+
+feature -- Channel harvest (the composition root's tick calls this)
+
+	poll_channel
+			-- The harvest's share of the tick. Called AFTER `poll_video',
+			-- so the queue has already had its turn: the harvest reads
+			-- the queue's state to decide what to do next, and reading it
+			-- mid-advance is how a batch gets handed on twice.
+		local
+			l_was_running: BOOLEAN
+		do
+			if harvest.is_running then
+				l_was_running := True
+				harvest.step
+				report (harvest.last_message)
+				channel_status.set_text (harvest.progress_line)
+				refresh_video_grid
+			end
+			if l_was_running and then not harvest.is_running then
+				if harvest.is_failed then
+					add_finding ({STRING_32} "warn", {STRING_32} "channel", harvest.last_error,
+						{STRING_32} "Nothing was written for this channel, or only what had already finished")
+				else
+					add_finding ({STRING_32} "info", {STRING_32} "channel", harvest.done_line,
+						{STRING_32} "Each transcript opens with front matter naming its channel and category; the folder also holds an index")
+				end
+				report (harvest.progress_line)
+				channel_status.set_text (harvest.progress_line)
+			end
+		end
+
+feature {NONE} -- Channel harvest
+
+	on_channel_harvest
+			-- Start a harvest of the channel in the box.
+		do
+			if harvest.is_running then
+				report ("A harvest is already running - press Stop to give up on it.")
+			elseif field_channel_url.text.is_empty then
+				report ("Give a channel first: a @handle, a /channel/ link, or just the channel name.")
+			elseif field_channel_root.text.is_empty then
+				report ("Say which folder the channel folders go under.")
+			else
+				settings.set_channel_root (field_channel_root.text)
+				settings.store
+				if harvest.start (field_channel_url.text) then
+					report (harvest.last_message)
+					channel_status.set_text (harvest.progress_line)
+				else
+					report (harvest.last_error)
+				end
+			end
+		end
+
+	on_channel_stop
+		do
+			if not harvest.is_running then
+				report ("No harvest is running.")
+			else
+				harvest.stop
+				report (harvest.last_message)
+				channel_status.set_text (harvest.progress_line)
+				refresh_video_grid
+			end
+		end
+
+	on_channel_browse
+		local
+			fd: SW_FILE_DIALOG
+			start_dir: STRING_32
+		do
+			start_dir := field_channel_root.text.twin
+			if start_dir.is_empty or else not (create {DIRECTORY}.make (start_dir)).exists then
+				create start_dir.make_from_string_general ("C:\")
+			end
+			create fd.make_open (start_dir)
+			fd.set_on_accept (agent on_channel_folder_picked)
+			window.show_sheet (fd, 640.0)
+		end
+
+	on_channel_folder_picked (a_path: STRING_32)
+			-- Same rule as the output folder: the dialog picks files, so
+			-- a file's folder - or the path itself when it is one - is
+			-- the answer.
+		local
+			l_dir: STRING_32
+			i: INTEGER
+		do
+			window.close_sheet
+			if (create {DIRECTORY}.make (a_path)).exists then
+				l_dir := a_path.twin
+			else
+				l_dir := a_path.twin
+				i := l_dir.last_index_of ('\', l_dir.count)
+				if i > 1 then
+					l_dir := l_dir.substring (1, i - 1)
+				end
+			end
+			if not l_dir.is_empty then
+				field_channel_root.set_text (l_dir)
+				settings.set_channel_root (l_dir)
+				settings.store
+				report ({STRING_32} "Channel folders go under " + l_dir)
+			end
+		end
+
+	on_channel_batch_changed (a_value: INTEGER)
+		do
+			if not is_loading and then a_value >= 1 and then a_value <= settings.Max_channel_batch_size then
+				settings.set_channel_batch_size (a_value)
+				settings.store
+			end
+		end
+
+	on_categorize_changed (a_on: BOOLEAN)
+		do
+			if not is_loading then
+				settings.set_categorize_channel (a_on)
+				settings.store
 			end
 		end
 
@@ -1719,6 +1877,7 @@ feature {NONE} -- State
 	cycle: OCR_CYCLE
 	status_strip: OCR_SW_STRIP
 	queue: OCR_VIDEO_QUEUE
+	harvest: OCR_CHANNEL_HARVEST
 	is_loading: BOOLEAN
 
 	on_hotkey_changed: detachable PROCEDURE
@@ -1757,6 +1916,12 @@ feature {NONE} -- State
 	video_preview: SW_PARAGRAPH_LIST attribute create Result.make (220.0) end
 	video_grid: SW_DATA_GRID [OCR_VIDEO_ITEM] attribute create Result.make (200.0) end
 	button_video_fetch: SW_BUTTON attribute create Result.make ("Fetch All...", Void) end
+	field_channel_url: SW_TEXT_BOX attribute create Result.make_single_line ("") end
+	field_channel_root: SW_TEXT_BOX attribute create Result.make_single_line ("") end
+	field_channel_batch: SW_NUMBER_BOX attribute create Result.make (5, 1, 50, Void) end
+	check_categorize: SW_CHECK_BOX attribute create Result.make ("", False, Void) end
+	button_channel: SW_BUTTON attribute create Result.make ("Harvest Channel", Void) end
+	channel_status: SW_LABEL attribute create Result.make_ui ("") end
 	field_move_drive: SW_TEXT_BOX attribute create Result.make_single_line ("") end
 	field_text_name: SW_TEXT_BOX attribute create Result.make_single_line ("") end
 	field_endpoint: SW_TEXT_BOX attribute create Result.make_single_line ("") end

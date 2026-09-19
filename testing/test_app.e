@@ -36,6 +36,8 @@ feature {NONE} -- Initialization
 			run_rebuild_tests
 			print ("%N-- video caption tests --%N")
 			run_video_tests
+			print ("%N-- channel harvest tests --%N")
+			run_channel_tests
 
 			print ("%N========================%N")
 			print ("Results: " + passed.out + " passed, " + failed.out + " failed%N")
@@ -63,6 +65,7 @@ feature {NONE} -- Test runners
 			run_test (agent t.test_caption_text_refuses_junk, "caption_text_refuses_junk")
 			run_test (agent t.test_clock_caption, "clock_caption")
 			run_test (agent t.test_safe_file_stem, "safe_file_stem")
+			run_test (agent t.test_safe_file_stem_caps_a_title_that_breaks_on_the_boundary, "safe_file_stem_caps_on_the_boundary")
 			run_test (agent t.test_blocking_before_probe, "blocking_before_probe")
 			run_test (agent t.test_queue_adds_and_folds_links, "queue_adds_and_folds_links")
 			run_test (agent t.test_queue_names_stay_distinct, "queue_names_stay_distinct")
@@ -70,6 +73,32 @@ feature {NONE} -- Test runners
 			run_test (agent t.test_item_states_before_lookup, "item_states_before_lookup")
 			run_test (agent t.test_output_prompt_paths, "output_prompt_paths")
 			run_test (agent t.test_output_prompt_accept_needs_both, "output_prompt_accept_needs_both")
+		end
+
+	run_channel_tests
+		local
+			t: CHANNEL_TESTS
+		do
+			create t
+			run_test (agent t.test_channel_page_url_forms, "channel_page_url_forms")
+			run_test (agent t.test_channel_page_url_refusals, "channel_page_url_refusals")
+			run_test (agent t.test_is_channel_id, "is_channel_id")
+			run_test (agent t.test_folder_name_cleans, "folder_name_cleans")
+			run_test (agent t.test_matching_brace_respects_strings, "matching_brace_respects_strings")
+			run_test (agent t.test_videos_in_reads_ids_and_titles, "videos_in_reads_ids_and_titles")
+			run_test (agent t.test_next_token_finds_the_grid_continuation, "next_token_finds_the_grid_continuation")
+			run_test (agent t.test_sweep_starts_empty, "sweep_starts_empty")
+			run_test (agent t.test_channel_video_link_and_category, "channel_video_link_and_category")
+			run_test (agent t.test_read_categories_strips_decoration, "read_categories_strips_decoration")
+			run_test (agent t.test_read_categories_drops_the_models_thinking, "read_categories_drops_the_models_thinking")
+			run_test (agent t.test_seed_adopts_categories_already_in_use, "seed_adopts_categories_already_in_use")
+			run_test (agent t.test_categorizer_starts_bare, "categorizer_starts_bare")
+			run_test (agent t.test_channel_settings_defaults_and_overrides, "channel_settings_defaults_and_overrides")
+			run_test (agent t.test_manifest_records_by_id, "manifest_records_by_id")
+			run_test (agent t.test_yaml_text_survives_a_hostile_title, "yaml_text_survives_a_hostile_title")
+			run_test (agent t.test_slug_makes_a_tag, "slug_makes_a_tag")
+			run_test (agent t.test_harvest_starts_idle, "harvest_starts_idle")
+			run_test (agent t.test_harvest_refuses_a_link_that_names_no_channel, "harvest_refuses_a_link_that_names_no_channel")
 		end
 
 	rebuild_tests: detachable SW_REBUILD_TESTS
