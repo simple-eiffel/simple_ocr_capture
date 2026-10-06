@@ -23,7 +23,7 @@ want. Part of the [Simple Eiffel](https://github.com/simple-eiffel) ecosystem.
 
 ## Status
 
-✅ **Production** — v1.11.0
+✅ **Production** — v1.16.0
 
 - Ships as one executable plus cairo.dll — no runtime, no Python, **no Vision2**: the GUI is [simple_widgets](https://github.com/simple-eiffel/simple_widgets) over [simple_shell](https://github.com/simple-eiffel/simple_shell), the platform library this application's own C originally seeded
 - Talks to a local Ollama server over WinHTTP; nothing leaves the machine
@@ -72,19 +72,34 @@ first run; a discrete GPU with 12 GB or more of VRAM is strongly recommended.
 
 - **A whole channel in one go** — give the Video tab a channel (`@handle`, a
   `/channel/UC...` link, a legacy `/c/` or `/user/` link, or just the name) and
-  press **Harvest Channel**. Every video the channel lists under **Videos** is
-  collected, then fetched in batches of five, into a folder named after the
-  channel. Measured against `@BibleLine`: 539 videos listed in 18 pages in 5.6
-  seconds. No browser, no API key, no yt-dlp — YouTube's own browse endpoint
-  over WinHTTP. Shorts are not included; the Videos tab does not list them
+  press **Harvest Channel**. Every video the channel lists under **Videos** and
+  under **Live** (its past streams) is collected, then fetched in batches of
+  five, into a folder named after the channel. Measured against `@BibleLine`:
+  539 videos under Videos and 759 under Live, with no overlap. No browser, no
+  API key, no yt-dlp — YouTube's own browse endpoint over WinHTTP. Shorts are
+  not included
+- **Live streams are first-class** — a lecture library or a weekly broadcast
+  keeps most of its recordings under Live, which a Videos-only harvest misses
+  while reporting success. Both tabs are read by default; a video listed under
+  both is fetched once. A stream the listing shows as **upcoming** or **live
+  right now** has nothing to transcribe yet: it is skipped, named in the log
+  and the done line, and picked up by the next run once it has finished. A
+  recent stream whose captions YouTube has not finished making is treated the
+  same way. Untick *Include the Live tab* on the Video tab, or pass
+  `--tabs videos`, to read Videos alone
 - **Categories from your own machine** — the local model reads the harvested
   titles, names the categories that fit *that* channel, and files every video
   under one of them. Nothing is sent anywhere, and there is nothing to
   configure: the first text model your Ollama holds is used. A title it will
   not confidently place goes to `Uncategorized` rather than being guessed at
 - **Harvested transcripts carry YAML front matter** — title, channel, category,
-  URL, video id, date and tags — and stay flat in one folder per channel, with
-  an index grouping them by category. Re-run the same channel later and only
+  URL, video id, the tab it came from (`tab: videos` or `tab: streams`), date
+  and tags — and stay flat in one folder per channel, with an index grouping
+  them by category, counting each tab and marking each entry with its tab.
+  Each channel folder carries a `_channel.md` card with the channel's id, so a harvest
+  never pours one channel into another's folder, and the root keeps `_channels.md` /
+  `_channels.tsv`, a registry of every channel already collected.
+  Re-run the same channel later and only
   the new videos are fetched: each folder keeps a manifest of the video ids
   already written, matched on the id, not the title
 - **YouTube captions to transcript** — or paste one link or a whole list; each
@@ -97,7 +112,16 @@ first run; a discrete GPU with 12 GB or more of VRAM is strongly recommended.
   once, and the gated caption tracks are fetched from your session. No cookie file
   is read; only YouTube's own requests leave the machine
 - `--captions <url> <out.txt>` fetches one video headless;
-  `--channel <channel> [<root>] [--no-categories]` runs a whole channel the same way
+  `--channel <channel> [<root>] [--folder <name>] [--no-categories] [--tabs videos,streams] [--limit <n>] [--list-only]`
+  runs a whole channel the same way:
+  - `--tabs` picks the tabs: `videos`, `streams` (or `live`), or both. **Default: both.**
+    An existing script that runs `--channel` now harvests the Live tab too —
+    on a channel with hundreds of hours of streams that is a long first run
+  - `--limit <n>` fetches at most *n* new transcripts this run and leaves the
+    rest for the next — a trial run before committing to a whole channel
+  - `--list-only` reads the listing and reports it per tab (count, listed
+    hours, the first titles, anything upcoming or live now) and writes
+    nothing at all
 
 ### Output and diagnostics
 
@@ -170,9 +194,9 @@ Binaries land in `EIFGENs/<target>/F_code/`.
 | Target | What it is |
 |---|---|
 | `ocr_capture` | The shipped GUI application |
-| `ocr_cli` | Headless `--worker` (spawned per capture), `--shot` (pipeline check), `--captions` (video transcript) |
+| `ocr_cli` | Headless `--worker` (spawned per capture), `--shot` (pipeline check), `--captions` (video transcript), `--channel` (channel harvest) |
 | `hotkey_spike` | Throwaway proof that the system-wide hotkey fires |
-| `simple_ocr_capture_tests` | Console test runner (87 tests) |
+| `simple_ocr_capture_tests` | Console test runner (126 tests) |
 
 ### Dependencies
 
@@ -202,9 +226,12 @@ path that is not on `PATH`, so a finalized binary fails with a bare "cURL issue"
   FEASIBILITY-video-captions.md are not built. A members-only video needs the
   browser-session route above — without it the player will not hand its track
   to an anonymous request.
-- A channel harvest reads the **Videos** tab. A channel that puts its content
-  in playlists or streams rather than there will list fewer videos than you
-  expect, and Shorts are never included.
+- A channel harvest reads the **Videos** and **Live** tabs. A channel that
+  keeps content only in playlists, or in Shorts, will list fewer videos than
+  you expect. An upcoming or in-progress stream is skipped until it has
+  finished, and a stream's transcript is only as good as YouTube's caption
+  track for it: a lecture recorded with poor room audio can come back as
+  little more than `[Music]`.
 - The category pass needs a text model in Ollama. Without one the harvest says
   so and fetches everything under `Uncategorized` rather than stopping — the
   transcripts are the point, the filing is a convenience.

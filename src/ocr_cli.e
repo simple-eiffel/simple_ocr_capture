@@ -125,6 +125,11 @@ feature {NONE} -- Modes
 			-- checked without clicking. Exit 1 when the run fails, 2 on
 			-- usage.
 			--
+			-- Both the Videos and the Live tab are read unless `--tabs'
+			-- names one; `--limit <n>' fetches at most n new transcripts;
+			-- `--list-only' reads the listing and reports it, per tab,
+			-- and writes nothing at all.
+			--
 			-- The loop here is the window's tick written out: the queue
 			-- gets its one lookup or one fetch, then the harvest gets its
 			-- step. Same order as OCR_SW_GUI.on_tick, for the same reason.
@@ -132,10 +137,10 @@ feature {NONE} -- Modes
 			l_settings: OCR_SETTINGS
 			l_queue: OCR_VIDEO_QUEUE
 			l_harvest: OCR_CHANNEL_HARVEST
-			l_said: STRING_32
+			l_limit: INTEGER
 		do
-			if a_args.argument_count < 2 then
-				io.error.put_string ("usage: --channel <channel-url-or-handle> [<root-folder>] [--folder <name>] [--no-categories]%N")
+			if a_args.argument_count < 2 or else a_args.argument (2).starts_with ("--") then
+				io.error.put_string (Channel_usage)
 				set_exit_code (2)
 			else
 				create l_settings
@@ -148,41 +153,186 @@ feature {NONE} -- Modes
 				if attached flag_value (a_args, "--folder") as al_folder and then not al_folder.is_empty then
 					l_settings.set_channel_folder_name (al_folder)
 				end
-				create l_queue.make (l_settings)
-				create l_harvest.make (l_settings, l_queue)
-				create l_said.make_empty
-				if not l_harvest.start (a_args.argument (2)) then
+				if has_flag (a_args, "--tabs") then
+					if attached flag_value (a_args, "--tabs") as al_tabs and then
+						attached (create {OCR_CHANNEL_SWEEP}.make).tab_choice (al_tabs) as al_choice
+					then
+						if al_choice.error.is_empty then
+							l_settings.set_channel_tabs (al_choice.videos, al_choice.streams)
+						else
+							io.error.put_string (utf8 (al_choice.error))
+							io.error.put_new_line
+							set_exit_code (2)
+						end
+					else
+						io.error.put_string ("--tabs needs a value: videos, streams (or live), or both%N")
+						set_exit_code (2)
+					end
+				end
+				if has_flag (a_args, "--limit") then
+					if attached flag_value (a_args, "--limit") as al_limit and then al_limit.is_integer
+						and then al_limit.to_integer >= 0
+					then
+						l_limit := al_limit.to_integer
+					else
+						io.error.put_string ("--limit needs a whole number, 0 for no limit%N")
+						set_exit_code (2)
+					end
+				end
+				if has_flag (a_args, "--list-only") then
+					run_channel_listing (a_args.argument (2), l_settings)
+				else
+					create l_queue.make (l_settings)
+					create l_harvest.make (l_settings, l_queue)
+					l_harvest.set_fetch_limit (l_limit)
+					run_channel_harvest (a_args.argument (2), l_harvest, l_queue)
+				end
+			end
+		end
+
+	run_channel_harvest (a_url: READABLE_STRING_32; a_harvest: OCR_CHANNEL_HARVEST; a_queue: OCR_VIDEO_QUEUE)
+			-- Drive `a_harvest' of `a_url' to its end, saying each change
+			-- of progress on its own line.
+		require
+			url_given: not a_url.is_empty
+		local
+			l_harvest: OCR_CHANNEL_HARVEST
+			l_queue: OCR_VIDEO_QUEUE
+			l_said: STRING_32
+		do
+			l_harvest := a_harvest
+			l_queue := a_queue
+			create l_said.make_empty
+			if not l_harvest.start (a_url) then
+				io.error.put_string (utf8 (l_harvest.last_error))
+				io.error.put_new_line
+				set_exit_code (1)
+			else
+				from
+				until
+					not l_harvest.is_running
+				loop
+					if l_queue.has_pending_lookup then
+						l_queue.look_up_next
+					elseif l_queue.is_fetching then
+						l_queue.fetch_next
+					end
+					l_harvest.step
+					if not l_harvest.progress_line.same_string (l_said) then
+						l_said := l_harvest.progress_line
+						print (utf8 (l_said))
+						print ("%N")
+					end
+				end
+				if l_harvest.is_failed then
 					io.error.put_string (utf8 (l_harvest.last_error))
 					io.error.put_new_line
 					set_exit_code (1)
 				else
-					from
-					until
-						not l_harvest.is_running
-					loop
-						if l_queue.has_pending_lookup then
-							l_queue.look_up_next
-						elseif l_queue.is_fetching then
-							l_queue.fetch_next
-						end
-						l_harvest.step
-						if not l_harvest.progress_line.same_string (l_said) then
-							l_said := l_harvest.progress_line
-							print (utf8 (l_said))
-							print ("%N")
-						end
-					end
-					if l_harvest.is_failed then
-						io.error.put_string (utf8 (l_harvest.last_error))
-						io.error.put_new_line
-						set_exit_code (1)
-					else
-						print (utf8 (l_harvest.done_line))
-						print ("%N")
-					end
+					print (utf8 (l_harvest.done_line))
+					print ("%N")
 				end
 			end
 		end
+
+	run_channel_listing (a_url: READABLE_STRING_32; a_settings: OCR_SETTINGS)
+			-- Read the channel's listing - the tabs `a_settings' asks
+			-- for - and report what it holds, per tab. No folder is
+			-- made, no manifest read, no transcript fetched: a dry run,
+			-- for checking a channel before committing hours to it.
+		require
+			url_given: not a_url.is_empty
+		local
+			l_sweep: OCR_CHANNEL_SWEEP
+			l_ok: BOOLEAN
+			l_tab: INTEGER
+		do
+			create l_sweep.make
+			if not l_sweep.resolve (a_url) then
+				io.error.put_string (utf8 (l_sweep.last_error))
+				io.error.put_new_line
+				set_exit_code (1)
+			else
+				l_sweep.set_tabs (a_settings.harvest_videos_tab, a_settings.harvest_streams_tab)
+				print (utf8 ({STRING_32} "channel: " + l_sweep.channel_name + {STRING_32} " (" + l_sweep.channel_id.to_string_32))
+				if not l_sweep.handle.is_empty then
+					print (", @" + l_sweep.handle)
+				end
+				print (")%N")
+				print (utf8 ({STRING_32} "reading: " + l_sweep.wanted_tabs_text))
+				print ("%N")
+				from
+					l_ok := l_sweep.sweep_first_page
+				until
+					not l_ok or else not l_sweep.is_sweeping
+				loop
+					l_ok := l_sweep.sweep_next_page
+				end
+				if not l_ok then
+					io.error.put_string (utf8 (l_sweep.last_error))
+					io.error.put_new_line
+					set_exit_code (1)
+				else
+					from
+						l_tab := 1
+					until
+						l_tab > l_sweep.Tab_count
+					loop
+						if l_sweep.wants_tab (l_tab) then
+							print_tab_listing (l_sweep, l_tab)
+						end
+						l_tab := l_tab + 1
+					end
+					print ("listed under both tabs, kept once: " + l_sweep.repeat_count.out + "%N")
+					print ("upcoming, skipped: " + l_sweep.upcoming_count.out + "%N")
+					print ("live now, skipped: " + l_sweep.live_now_count.out + "%N")
+					across
+						l_sweep.held_back as ic
+					loop
+						if ic.is_upcoming then
+							print ("  upcoming  ")
+						else
+							print ("  live now  ")
+						end
+						print (ic.video_id + "  " + ic.tab + "  " + utf8 (ic.title) + "%N")
+					end
+					print ("to harvest: " + l_sweep.count.out + " video(s) from " + l_sweep.pages_read.out + " page(s)%N")
+				end
+			end
+		end
+
+	print_tab_listing (a_sweep: OCR_CHANNEL_SWEEP; a_tab: INTEGER)
+			-- One tab's count and listed hours, and its first three
+			-- titles, so a wrong tab is obvious at a glance.
+		require
+			in_range: a_tab >= 1 and a_tab <= a_sweep.Tab_count
+		local
+			l_key: STRING_8
+			l_seconds, l_shown: INTEGER
+		do
+			l_key := a_sweep.tab_key (a_tab)
+			across
+				a_sweep.videos as ic
+			loop
+				if ic.tab.same_string (l_key) then
+					l_seconds := l_seconds + ic.listed_seconds
+				end
+			end
+			print (utf8 (a_sweep.tab_name (a_tab)) + " (" + l_key + "): " + a_sweep.count_in_tab (a_tab).out
+				+ " video(s), " + (l_seconds // 3600).out + " hour(s) listed%N")
+			across
+				a_sweep.videos as ic
+			until
+				l_shown >= 3
+			loop
+				if ic.tab.same_string (l_key) then
+					print ("  " + ic.video_id + "  " + utf8 (ic.title) + "%N")
+					l_shown := l_shown + 1
+				end
+			end
+		end
+
+	Channel_usage: STRING = "usage: --channel <channel-url-or-handle> [<root-folder>] [--folder <name>] [--no-categories] [--tabs videos,streams] [--limit <n>] [--list-only]%N"
 
 	flag_value (a_args: ARGUMENTS_32; a_flag: READABLE_STRING_GENERAL): detachable STRING_32
 			-- The argument after `a_flag'; Void when the flag is absent
@@ -1065,7 +1215,9 @@ feature {NONE} -- Modes
 			print ("  --images list|delete|move <folder> [drive]  the ocr_* images in a folder%N")
 			print ("  --settings [drive]            print persisted settings; with an argument, store it first%N")
 			print ("  --captions <url> <out-file>   fetch a YouTube video's caption track as a transcript (.md for Markdown)%N")
-			print ("  --channel <channel> [<root>] [--folder <name>] [--no-categories]  harvest every transcript a channel lists under Videos%N")
+			print ("  --channel <channel> [<root>] [--folder <name>] [--no-categories] [--tabs videos,streams] [--limit <n>] [--list-only]%N")
+			print ("                                harvest every transcript a channel lists under Videos and Live (streams);%N")
+			print ("                                --tabs picks one, --limit caps new transcripts, --list-only only reports the listing%N")
 		end
 
 feature {NONE} -- Constants

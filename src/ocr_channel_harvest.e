@@ -34,6 +34,17 @@ note
 		the answer can change: turning on the browser session makes the
 		members-only ones fetchable without anything here having to know
 		that it did.
+
+		The listing reads the channel's Videos tab and its Live tab
+		(past streams) - both unless the settings narrow it - and every
+		transcript records which one it came from, in its front matter
+		(`tab: videos' or `tab: streams'), in the manifest and in the
+		index. A stream the listing shows as upcoming or live right now
+		has nothing to transcribe yet: it is skipped, named in the log,
+		counted in the done line, and found finished by the next run. A
+		recent stream whose captions YouTube has not finished making is
+		refused at lookup like any captionless video, and for the same
+		reason is not recorded: the next run asks again.
 	]"
 
 class
@@ -98,6 +109,39 @@ feature -- Access
 
 	refused_count: INTEGER
 			-- Videos YouTube would not give captions for.
+
+	restored_count: INTEGER
+			-- Videos the manifest claimed but whose transcript was gone
+			-- from the folder, and which this run therefore fetched again.
+
+	renamed_count: INTEGER
+			-- Videos already held whose title has CHANGED on the channel
+			-- since they were fetched. Nothing is re-fetched for them -
+			-- the transcript is still the right transcript - but the
+			-- front matter and the file name now carry the old title, and
+			-- a run that noticed silently would be hiding drift.
+
+	held_back_count: INTEGER
+			-- Streams the listing showed as upcoming or live right now,
+			-- and which were therefore not asked for.
+		do
+			Result := sweep.held_back.count
+		end
+
+	fetch_limit: INTEGER
+			-- At most this many new transcripts per run; 0 for no limit.
+			-- For a trial run against a channel with hundreds of hours
+			-- under Live, before committing to all of it.
+
+	deferred_count: INTEGER
+			-- New videos `fetch_limit' left for a later run.
+
+	renamed: ARRAYED_LIST [TUPLE [video_id: STRING_8; was, now: STRING_32]]
+			-- The renames `renamed_count' counts, for the findings grid
+			-- and the log.
+		attribute
+			create Result.make (8)
+		end
 
 	channel_name: STRING_32
 		do
@@ -181,10 +225,32 @@ feature -- Status report
 				Result.append_string_general (skipped_count.out)
 				Result.append_string_general (" already here")
 			end
+			if restored_count > 0 then
+				Result.append_string_general (", ")
+				Result.append_string_general (restored_count.out)
+				Result.append_string_general (" restored (file was missing)")
+			end
+			if renamed_count > 0 then
+				Result.append_string_general (", ")
+				Result.append_string_general (renamed_count.out)
+				Result.append_string_general (" renamed upstream")
+			end
 			if refused_count > 0 then
 				Result.append_string_general (", ")
 				Result.append_string_general (refused_count.out)
 				Result.append_string_general (" refused by YouTube")
+			end
+			if held_back_count > 0 then
+				Result.append_string_general (", ")
+				Result.append_string_general (held_back_count.out)
+				Result.append_string_general (" stream(s) upcoming or live now, skipped")
+			end
+			if deferred_count > 0 then
+				Result.append_string_general (", ")
+				Result.append_string_general (deferred_count.out)
+				Result.append_string_general (" left for a later run (limit ")
+				Result.append_string_general (fetch_limit.out)
+				Result.append_character (')')
 			end
 			Result.append_string_general (" - ")
 			Result.append (folder)
@@ -215,12 +281,24 @@ feature -- Basic operations
 			running_on_success: Result implies is_running
 		end
 
+	set_fetch_limit (a_limit: INTEGER)
+			-- Fetch at most `a_limit' new transcripts per run; 0 for all.
+		require
+			not_negative: a_limit >= 0
+			not_mid_run: not is_running
+		do
+			fetch_limit := a_limit
+		ensure
+			set: fetch_limit = a_limit
+		end
+
 	stop
 			-- Give up on the run; whatever is written stays written.
 		do
 			if is_running then
 				close_batch
 				write_index
+				write_identity
 				phase := Phase_done
 				last_message := done_line
 				log.append ({STRING_32} "channel harvest: stopped by hand - " + done_line)
@@ -249,8 +327,10 @@ feature {NONE} -- The phases
 	step_resolving
 		do
 			if sweep.resolve (start_url) then
+				sweep.set_tabs (settings.harvest_videos_tab, settings.harvest_streams_tab)
 				phase := Phase_sweeping
-				last_message := {STRING_32} "Listing the videos of " + sweep.channel_name + {STRING_32} "..."
+				last_message := {STRING_32} "Listing the videos of " + sweep.channel_name
+					+ {STRING_32} " (" + sweep.wanted_tabs_text + {STRING_32} ")..."
 			else
 				fail (sweep.last_error)
 			end
@@ -270,12 +350,15 @@ feature {NONE} -- The phases
 			if phase = Phase_sweeping then
 				last_message := sweep.summary_line
 				if not sweep.is_sweeping then
-					if sweep.count = 0 then
-						fail ({STRING_32} "That channel lists no videos under Videos.")
+					log_listing
+					if sweep.count = 0 and sweep.held_back.is_empty then
+						fail ({STRING_32} "That channel lists no videos under " + sweep.wanted_tabs_text + {STRING_32} ".")
+					elseif sweep.count = 0 then
+						fail ({STRING_32} "That channel lists nothing under " + sweep.wanted_tabs_text
+							+ {STRING_32} " that has been broadcast yet: " + held_back_count.out
+							+ {STRING_32} " upcoming or live now. Run it again once they have finished.")
 					else
 						phase := Phase_preparing
-						log.append ({STRING_32} "channel harvest: listed " + sweep.count.out
-							+ {STRING_32} " videos from " + sweep.channel_name)
 					end
 				end
 			end
@@ -286,23 +369,62 @@ feature {NONE} -- The phases
 			-- written, and decide whether the model is wanted.
 		local
 			l_manifest: OCR_CHANNEL_MANIFEST
+			l_card: OCR_CHANNEL_CARD
+			l_backfilled: BOOLEAN
 		do
 			folder := channel_folder
-			if not made_folder (folder) then
+			create l_card.make (folder)
+			card := l_card
+			if not l_card.belongs_to (sweep.channel_id) then
+					-- The folder is another channel's. Refuse rather than
+					-- interleave two ministries into one corpus.
+				fail (l_card.mismatch_reason (sweep.channel_id, sweep.channel_name))
+			elseif not made_folder (folder) then
 				fail ({STRING_32} "Could not make the folder " + folder)
 			else
 				create l_manifest.make (folder)
 				manifest := l_manifest
+					-- Everything this folder already holds is spoken for.
+					--
+					-- Read from the FOLDER, not from the manifest. They
+					-- answer different questions: the manifest says which
+					-- videos we have, the directory says which names are
+					-- taken, and a name is taken whether or not a manifest
+					-- row mentions it. Seeding this from the manifest meant
+					-- that a folder whose manifest was deleted, renamed or
+					-- never copied reserved NOTHING, so every fetch matched
+					-- an existing file by name and was appended to it -
+					-- silently, and for the whole channel.
+				queue.set_reserved_names (names_in_folder (folder))
 				pending.wipe_out
 				across
 					sweep.videos as ic
 				loop
-					if l_manifest.has (ic.video_id) then
-						skipped_count := skipped_count + 1
-					else
+					if not l_manifest.has (ic.video_id) then
 						pending.extend (ic)
+					elseif not l_manifest.is_file_present (ic.video_id) then
+							-- Recorded, but the transcript is not there any
+							-- more. The disk wins: forget it and fetch again.
+						l_manifest.forget (ic.video_id)
+						pending.extend (ic)
+						restored_count := restored_count + 1
+					else
+						skipped_count := skipped_count + 1
+						note_if_renamed (l_manifest, ic)
+						if not ic.tab.is_empty and then attached l_manifest.entry_of (ic.video_id) as al
+							and then al.tab.is_empty
+						then
+								-- Written before the manifest had a tab
+								-- column; the listing in hand says which.
+							l_manifest.set_tab (ic.video_id, ic.tab)
+							l_backfilled := True
+						end
 					end
 				end
+				if l_backfilled and then not l_manifest.save then
+					log.append ({STRING_32} "channel harvest: could not write the manifest - " + l_manifest.last_error)
+				end
+				apply_fetch_limit
 				if pending.is_empty then
 					write_index
 					phase := Phase_done
@@ -467,15 +589,31 @@ feature {NONE} -- Batches
 				if attached queue.item_of_id (ic.video_id) as al_item then
 					if al_item.is_saved then
 						saved_count := saved_count + 1
+							-- Spoken for from now on: this row is about to be
+							-- cleared, and the next batch must not be handed
+							-- the same name and append to the file.
+						queue.reserve_name (al_item.file_name)
 						if attached manifest as al_manifest then
-							al_manifest.record (ic.video_id, al_item.file_name, ic.category)
+							al_manifest.record (ic.video_id, al_item.file_name, ic.category,
+								ic.title, al_item.run.track.length_seconds, ic.tab)
 							l_saved := True
 						end
 					elseif al_item.is_refused or al_item.is_failed then
 							-- Deliberately NOT recorded: see the class note.
 						refused_count := refused_count + 1
-						log.append ({STRING_32} "channel harvest: refused " + ic.watch_url
-							+ {STRING_32} " - " + al_item.detail)
+						if ic.is_stream and then al_item.is_refused and then al_item.run.track.is_playable
+							and then not al_item.run.track.has_captions
+						then
+								-- A stream that has ended but has no track yet:
+								-- YouTube makes a long broadcast's captions
+								-- hours after it ends. Not recorded, so the
+								-- next run asks again.
+							log.append ({STRING_32} "channel harvest: refused " + ic.watch_url
+								+ {STRING_32} " - a stream with no captions yet; they can take hours after a broadcast ends, and the next run will ask again")
+						else
+							log.append ({STRING_32} "channel harvest: refused " + ic.watch_url
+								+ {STRING_32} " - " + al_item.detail)
+						end
 					end
 				end
 			end
@@ -492,9 +630,54 @@ feature {NONE} -- Batches
 	finish
 		do
 			write_index
+			write_identity
 			phase := Phase_done
 			last_message := done_line
 			log.append ({STRING_32} "channel harvest: " + done_line)
+		end
+
+	write_identity
+			-- Claim the folder for this channel and note it in the root's
+			-- register of harvested channels.
+			--
+			-- Both are written whenever a run reaches the end, including
+			-- one stopped by hand: a folder with transcripts in it and no
+			-- card is a folder nothing can identify later, which is the
+			-- situation the card exists to prevent.
+		local
+			l_registry: OCR_CHANNEL_REGISTRY
+			l_held: INTEGER
+		do
+			if sweep.is_resolved and then not folder.is_empty then
+				if attached manifest as al_manifest then
+					l_held := al_manifest.count
+				end
+				if attached card as al_card and then
+					not al_card.write (sweep.channel_id, sweep.channel_name, sweep.handle, sweep.count, l_held)
+				then
+					log.append ({STRING_32} "channel harvest: could not write the channel card - " + al_card.last_error)
+				end
+				create l_registry.make (settings.channel_root_or_default)
+				l_registry.record (sweep.channel_id, leaf_of (folder), sweep.channel_name,
+					sweep.handle, sweep.count, l_held)
+				if not l_registry.save then
+					log.append ({STRING_32} "channel harvest: could not write the channel register - " + l_registry.last_error)
+				end
+			end
+		end
+
+	leaf_of (a_path: READABLE_STRING_32): STRING_32
+			-- The last segment of `a_path'.
+		local
+			i: INTEGER
+		do
+			Result := a_path.to_string_32
+			i := Result.last_index_of ('\', Result.count)
+			if i > 0 and then i < Result.count then
+				Result := Result.substring (i + 1, Result.count)
+			end
+		ensure
+			never_empty: a_path.is_empty or else not Result.is_empty
 		end
 
 	fail (a_reason: READABLE_STRING_32)
@@ -507,7 +690,7 @@ feature {NONE} -- Batches
 			failed: is_failed
 		end
 
-feature {NONE} -- What goes in the files
+feature -- What goes in the files
 
 	front_matter_for (a_video: OCR_CHANNEL_VIDEO): STRING_32
 			-- The YAML a harvested transcript opens with, so a vault can
@@ -528,6 +711,10 @@ feature {NONE} -- What goes in the files
 			Result.append (a_video.watch_url)
 			Result.append_string_general ("%Nvideo_id: ")
 			Result.append_string_general (a_video.video_id)
+			if not a_video.tab.is_empty then
+				Result.append_string_general ("%Ntab: ")
+				Result.append_string_general (a_video.tab)
+			end
 			Result.append_string_general ("%Nharvested: ")
 			Result.append_string_general (l_now.formatted_out ("yyyy-[0]mm-[0]dd"))
 			Result.append_string_general ("%Ntags:%N  - youtube-transcript%N  - ")
@@ -537,6 +724,7 @@ feature {NONE} -- What goes in the files
 			Result.append_string_general ("%N---%N%N")
 		ensure
 			fenced: Result.starts_with ({STRING_32} "---%N")
+			tab_recorded: not a_video.tab.is_empty implies Result.has_substring ({STRING_32} "%Ntab: " + a_video.tab.to_string_32 + {STRING_32} "%N")
 		end
 
 feature -- Conversion
@@ -605,6 +793,49 @@ feature -- Conversion
 
 feature {NONE} -- What goes in the files, continued
 
+	log_listing
+			-- What the sweep found, per listing, and every stream it set
+			-- aside, into the log.
+		do
+			log.append ({STRING_32} "channel harvest: listed " + sweep.count.out
+				+ {STRING_32} " videos from " + sweep.channel_name
+				+ {STRING_32} " - Videos " + sweep.count_in_tab (sweep.Tab_videos).out
+				+ {STRING_32} ", Live " + sweep.count_in_tab (sweep.Tab_streams).out
+				+ {STRING_32} ", listed under both " + sweep.repeat_count.out
+				+ {STRING_32} ", upcoming " + sweep.upcoming_count.out
+				+ {STRING_32} ", live now " + sweep.live_now_count.out)
+			across
+				sweep.held_back as ic
+			loop
+				if ic.is_upcoming then
+					log.append ({STRING_32} "channel harvest: skipped (upcoming) " + ic.watch_url + {STRING_32} " - " + ic.title)
+				else
+					log.append ({STRING_32} "channel harvest: skipped (live now) " + ic.watch_url + {STRING_32} " - " + ic.title)
+				end
+			end
+		end
+
+	apply_fetch_limit
+			-- Leave all but the first `fetch_limit' pending videos for a
+			-- later run.
+		do
+			deferred_count := 0
+			if fetch_limit > 0 and then pending.count > fetch_limit then
+				deferred_count := pending.count - fetch_limit
+				from
+				until
+					pending.count <= fetch_limit
+				loop
+					pending.finish
+					pending.remove
+				end
+				log.append ({STRING_32} "channel harvest: limit " + fetch_limit.out
+					+ {STRING_32} " - " + deferred_count.out + {STRING_32} " left for a later run")
+			end
+		ensure
+			within_limit: fetch_limit > 0 implies pending.count <= fetch_limit
+		end
+
 	write_index
 			-- Write the folder's index: every video of this channel that
 			-- has a transcript here, grouped under its category.
@@ -625,9 +856,12 @@ feature {NONE} -- What goes in the files, continued
 			retry
 		end
 
+feature -- The index
+
 	index_text (a_manifest: OCR_CHANNEL_MANIFEST): STRING_32
 			-- The index, categories in the order the model named them
-			-- and the catch-all last.
+			-- and the catch-all last. Each entry names the tab it was
+			-- found under, when that is known.
 		local
 			l_now: DATE_TIME
 		do
@@ -640,6 +874,22 @@ feature {NONE} -- What goes in the files, continued
 			Result.append (sweep.channel_name)
 			Result.append_string_general (" |%N| Videos listed | ")
 			Result.append_string_general (sweep.count.out)
+			if sweep.wants_videos then
+				Result.append_string_general (" |%N| Listed under Videos | ")
+				Result.append_string_general (sweep.count_in_tab (sweep.Tab_videos).out)
+			end
+			if sweep.wants_streams then
+				Result.append_string_general (" |%N| Listed under Live (streams) | ")
+				Result.append_string_general (sweep.count_in_tab (sweep.Tab_streams).out)
+			end
+			if sweep.repeat_count > 0 then
+				Result.append_string_general (" |%N| Listed under both, kept once | ")
+				Result.append_string_general (sweep.repeat_count.out)
+			end
+			if held_back_count > 0 then
+				Result.append_string_general (" |%N| Upcoming or live now, skipped | ")
+				Result.append_string_general (held_back_count.out)
+			end
 			Result.append_string_general (" |%N| Transcripts here | ")
 			Result.append_string_general (a_manifest.count.out)
 			Result.append_string_general (" |%N| Last harvest | ")
@@ -653,6 +903,8 @@ feature {NONE} -- What goes in the files, continued
 			append_category (Result, a_manifest, categorizer.Uncategorised)
 			Result.append_string_general ("%N")
 		end
+
+feature {NONE} -- The index, continued
 
 	append_category (a_text: STRING_32; a_manifest: OCR_CHANNEL_MANIFEST; a_category: READABLE_STRING_32)
 			-- The heading for `a_category' and a link per transcript
@@ -672,7 +924,13 @@ feature {NONE} -- What goes in the files, continued
 					end
 					a_text.append_string_general ("- [[")
 					a_text.append (stem_of (ic.file_name))
-					a_text.append_string_general ("]]%N")
+					a_text.append_string_general ("]]")
+					if not ic.tab.is_empty then
+						a_text.append_string_general (" (")
+						a_text.append_string_general (ic.tab)
+						a_text.append_character (')')
+					end
+					a_text.append_character ('%N')
 				end
 			end
 			if l_any then
@@ -702,6 +960,55 @@ feature {NONE} -- What goes in the files, continued
 			Result.append_character ('\')
 			Result.append (sweep.folder_name_of (sweep.channel_name))
 			Result.append_string_general (" - Index.md")
+		end
+
+feature -- Folder arithmetic
+
+	names_in_folder (a_folder: READABLE_STRING_32): ARRAYED_LIST [STRING_32]
+			-- Every Markdown file `a_folder' holds, by name.
+			--
+			-- The authority on which names are taken. Not the manifest:
+			-- see the note at the call site.
+		local
+			l_dir: DIRECTORY
+			l_name: STRING_32
+			l_retried: BOOLEAN
+		do
+			create Result.make (256)
+			if not l_retried then
+				create l_dir.make_with_name (a_folder)
+				if l_dir.exists then
+					across
+						l_dir.entries as ic
+					loop
+						l_name := ic.name.to_string_32
+						if l_name.count > 3 and then l_name.as_lower.ends_with ({STRING_32} ".md") then
+							Result.extend (l_name)
+						end
+					end
+				end
+			end
+		rescue
+			l_retried := True
+			retry
+		end
+
+feature {NONE} -- Drift
+
+	note_if_renamed (a_manifest: OCR_CHANNEL_MANIFEST; a_video: OCR_CHANNEL_VIDEO)
+			-- Record that `a_video' is titled differently now from when
+			-- it was fetched. Costs nothing: the listing already carries
+			-- the current title.
+		do
+			if attached a_manifest.entry_of (a_video.video_id) as al
+				and then not al.title.is_empty
+				and then not al.title.same_string (a_video.title)
+			then
+				renamed_count := renamed_count + 1
+				renamed.extend ([a_video.video_id.twin, al.title.twin, a_video.title.twin])
+				log.append ({STRING_32} "channel harvest: renamed upstream " + a_video.video_id
+					+ {STRING_32} " was [" + al.title + {STRING_32} "] now [" + a_video.title + {STRING_32} "]")
+			end
 		end
 
 	categories_in_use (a_manifest: OCR_CHANNEL_MANIFEST): ARRAYED_LIST [STRING_32]
@@ -744,28 +1051,118 @@ feature {NONE} -- What goes in the files, continued
 			end
 		end
 
-feature {NONE} -- The folder
+feature -- The folder
 
 	channel_folder: STRING_32
-			-- Where this channel's transcripts go.
+			-- The full path this channel's transcripts go in.
 		require
 			resolved: sweep.is_resolved
 		do
-			create Result.make (120)
+			create Result.make (160)
 			Result.append (settings.channel_root_or_default)
 			if not Result.is_empty and then Result.item (Result.count) /= '\' then
 				Result.append_character ('\')
 			end
-			if settings.channel_folder_name.is_empty then
-				Result.append (sweep.folder_name)
-			else
-					-- Cleaned the same way a channel name is: what the user
-					-- typed still has to be a folder Windows will accept.
-				Result.append (sweep.folder_name_of (settings.channel_folder_name))
+			Result.append (channel_folder_leaf)
+		ensure
+			never_empty: not Result.is_empty
+		end
+
+	channel_folder_leaf: STRING_32
+			-- The folder NAME for this channel, disambiguated.
+			--
+			-- Three rules, in order.
+			--
+			-- 1. If the registry has harvested this channel before, its
+			--    folder is where the transcripts already are - even if
+			--    the channel has renamed itself since. An id keeps its
+			--    folder; a name does not choose one.
+			-- 2. Otherwise the name is derived, from the override when
+			--    one is set, from the channel's own name when not.
+			-- 3. And if a folder of that name already belongs to a
+			--    DIFFERENT channel, another name is taken. Ten churches
+			--    are called "Landmark Baptist Church"; two of them are
+			--    in Florida; harvesting the second into the first one's
+			--    folder would interleave two ministries in one corpus
+			--    and nothing downstream could separate them again.
+		require
+			resolved: sweep.is_resolved
+		local
+			l_registry: OCR_CHANNEL_REGISTRY
+			l_base: STRING_32
+			i: INTEGER
+		do
+			create l_registry.make (settings.channel_root_or_default)
+			Result := l_registry.folder_for (sweep.channel_id)
+			if Result.is_empty then
+				if not settings.channel_folder_name.is_empty then
+						-- An explicit folder is obeyed exactly, cleaned only
+						-- so Windows will take it. It is NOT disambiguated:
+						-- if it turns out to hold another channel the run is
+						-- refused in `step_preparing' with the reason, which
+						-- is better than quietly writing somewhere the user
+						-- did not ask for.
+					Result := sweep.folder_name_of (settings.channel_folder_name)
+				else
+					l_base := sweep.folder_name
+					from
+						Result := l_base.twin
+						i := 1
+					until
+						not folder_belongs_elsewhere (Result)
+					loop
+						i := i + 1
+						Result := candidate_leaf (l_base, i)
+					end
+				end
 			end
 		ensure
 			never_empty: not Result.is_empty
 		end
+
+	candidate_leaf (a_base: READABLE_STRING_32; a_try: INTEGER): STRING_32
+			-- The `a_try'th name to try for `a_base'. The handle first,
+			-- because "Landmark Baptist Church (@LandmarkBaptistChurch)"
+			-- tells a person which one it is and "(2)" does not.
+		require
+			base_given: not a_base.is_empty
+			later_try: a_try >= 2
+		do
+			create Result.make (a_base.count + 28)
+			Result.append (a_base.to_string_32)
+			if a_try = 2 and then not sweep.handle.is_empty then
+				Result.append_string_general (" (@")
+				Result.append_string_general (sweep.handle)
+				Result.append_character (')')
+			else
+				Result.append_string_general (" (")
+				Result.append_string_general (a_try.out)
+				Result.append_character (')')
+			end
+			Result := sweep.folder_name_of (Result)
+		ensure
+			never_empty: not Result.is_empty
+			longer: Result.count > 0
+		end
+
+	folder_belongs_elsewhere (a_leaf: READABLE_STRING_32): BOOLEAN
+			-- Does a folder called `a_leaf' already hold a different
+			-- channel? An unclaimed or absent folder is free.
+		local
+			l_card: OCR_CHANNEL_CARD
+			l_path: STRING_32
+		do
+			create l_path.make (160)
+			l_path.append (settings.channel_root_or_default)
+			if not l_path.is_empty and then l_path.item (l_path.count) /= '\' then
+				l_path.append_character ('\')
+			end
+			l_path.append (a_leaf.to_string_32)
+			create l_card.make (l_path)
+			Result := not l_card.belongs_to (sweep.channel_id)
+		end
+
+feature {NONE} -- The folder, continued
 
 	made_folder (a_path: READABLE_STRING_32): BOOLEAN
 			-- Make `a_path' and every folder above it; True when it is
@@ -798,6 +1195,10 @@ feature {NONE} -- Implementation
 	manifest: detachable OCR_CHANNEL_MANIFEST
 			-- What the folder already holds; Void before `step_preparing'.
 
+	card: detachable OCR_CHANNEL_CARD
+			-- Which channel the folder belongs to; Void before
+			-- `step_preparing'.
+
 	pending: ARRAYED_LIST [OCR_CHANNEL_VIDEO]
 			-- Videos still to hand to the queue.
 
@@ -824,9 +1225,14 @@ feature {NONE} -- Implementation
 			last_error.wipe_out
 			last_message.wipe_out
 			manifest := Void
+			card := Void
 			saved_count := 0
 			skipped_count := 0
 			refused_count := 0
+			restored_count := 0
+			renamed_count := 0
+			deferred_count := 0
+			renamed.wipe_out
 			place_index := 0
 			batch_fetch_started := False
 		end

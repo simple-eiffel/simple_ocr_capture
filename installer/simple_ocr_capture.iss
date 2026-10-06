@@ -60,8 +60,8 @@ Source: "{#SourceExe}"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\EIFGENs\ocr_capture\F_code\cairo.dll"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\EIFGENs\ocr_capture\F_code\ocr_yt_session.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\EIFGENs\ocr_capture\F_code\WebView2Loader.dll"; DestDir: "{app}"; Flags: ignoreversion
-Source: "..\ocr_cairo\winocr_label.ps1"; DestDir: "{app}"; Flags: ignoreversion
-Source: "..\ocr_cairo\winocr_boxes.ps1"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\scripts\winocr_label.ps1"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\scripts\winocr_boxes.ps1"; DestDir: "{app}"; Flags: ignoreversion
 Source: "README.txt";   DestDir: "{app}"; Flags: ignoreversion isreadme
 
 [Icons]

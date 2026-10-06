@@ -136,7 +136,8 @@ feature -- Status report
 		end
 
 	has_file_name (a_name: READABLE_STRING_32; a_except: detachable OCR_VIDEO_ITEM): BOOLEAN
-			-- Does a row other than `a_except' already use `a_name'?
+			-- Does a row other than `a_except', or a name already
+			-- written, use `a_name'?
 		do
 			across
 				items as ic
@@ -145,6 +146,35 @@ feature -- Status report
 			loop
 				Result := ic /= a_except and then ic.file_name.is_case_insensitive_equal (a_name)
 			end
+			if not Result then
+				across
+					reserved_names as ic
+				until
+					Result
+				loop
+					Result := ic.is_case_insensitive_equal (a_name)
+				end
+			end
+		end
+
+	reserved_names: ARRAYED_LIST [STRING_32]
+			-- File names that are spoken for although no row holds them:
+			-- the transcripts already in the target folder.
+			--
+			-- The queue alone cannot see them. A fetch pass clears
+			-- finished rows between batches, so two videos whose titles
+			-- shorten to the same file name in DIFFERENT batches both
+			-- pass `distinct_name' and the second is appended to the
+			-- first one's file - one note holding two sermons under one
+			-- video's front matter, and no error anywhere. Measured
+			-- 2026-09-19 on a 1,298-video channel: 15 videos landed in
+			-- 5 files that way, all of them recurring series whose
+			-- weekly titles are identical once cut to length.
+			--
+			-- Left empty by the Video tab, whose rows are all in the
+			-- queue at once and whose behaviour is unchanged.
+		attribute
+			create Result.make (64)
 		end
 
 feature -- Element change
@@ -189,6 +219,52 @@ feature -- Element change
 		ensure
 			grew: items.count = old items.count + Result
 			counted: Result = last_added
+		end
+
+	set_reserved_names (a_names: LIST [STRING_32])
+			-- Treat `a_names' as taken when naming rows: the files the
+			-- target folder already holds.
+		do
+			create reserved_names.make (a_names.count.max (16))
+			across
+				a_names as ic
+			loop
+				if not ic.is_empty then
+					reserved_names.extend (ic.twin)
+				end
+			end
+		ensure
+			counted: reserved_names.count <= a_names.count
+		end
+
+	reserve_name (a_name: READABLE_STRING_32)
+			-- Note that `a_name' has now been written, so no later row
+			-- in this pass can be given it once its own row is cleared.
+			--
+			-- The test is against `reserved_names' ALONE, deliberately.
+			-- Asking `has_file_name' here is the obvious thing to write
+			-- and it is wrong: the row that just wrote the file is still
+			-- in `items' holding this very name, so the answer is always
+			-- "already taken", nothing is ever reserved, and
+			-- `clear_finished' then frees the name again. That bug
+			-- survived a first fix and a green test suite.
+		local
+			l_known: BOOLEAN
+		do
+			if not a_name.is_empty then
+				across
+					reserved_names as ic
+				until
+					l_known
+				loop
+					l_known := ic.is_case_insensitive_equal (a_name)
+				end
+				if not l_known then
+					reserved_names.extend (a_name.to_string_32)
+				end
+			end
+		ensure
+			taken: a_name.is_empty or else has_file_name (a_name, Void)
 		end
 
 	remove (a_index: INTEGER)

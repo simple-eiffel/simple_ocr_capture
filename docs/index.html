@@ -135,14 +135,25 @@
             <ul>
                 <li><strong>A whole channel in one go</strong> &mdash; give the Video tab a channel
                     (a <code>@handle</code>, a <code>/channel/</code> link, or just the name) and press
-                    Harvest Channel. Every video it lists under Videos is collected, then fetched in
-                    batches of five into a folder named after the channel. Measured against one
-                    channel: 539 videos listed in 18 pages in 5.6 seconds. No browser, no API key</li>
+                    Harvest Channel. Every video it lists under Videos and under Live (its past
+                    streams) is collected, then fetched in batches of five into a folder named after
+                    the channel. Measured against one channel: 539 videos under Videos and 759 under
+                    Live, no overlap. No browser, no API key</li>
+                <li><strong>Live streams included</strong> &mdash; both tabs are read by default and a
+                    video listed under both is fetched once. A stream that is upcoming or live right
+                    now is skipped and noted, and the next run picks it up once it has finished. Each
+                    transcript's front matter says <code>tab: videos</code> or <code>tab: streams</code>,
+                    and the index counts each tab. From the command line, <code>--tabs</code> chooses
+                    the tabs, <code>--limit &lt;n&gt;</code> caps a run, and <code>--list-only</code>
+                    reports the listing per tab without writing anything</li>
                 <li><strong>Categories from your own machine</strong> &mdash; the local model reads the
                     harvested titles, names the categories that fit <em>that</em> channel, and files
                     every video under one of them. Nothing is sent anywhere and there is nothing to
                     configure. Each transcript opens with YAML front matter naming its channel and
                     category, and the folder gets an index grouping them</li>
+                <li><strong>Each folder knows its channel</strong> &mdash; a <code>_channel.md</code> card holds the
+                    channel id, so a harvest never pours one channel into another's folder, and the root
+                    keeps a registry (<code>_channels.md</code>, <code>_channels.tsv</code>) of every channel collected</li>
                 <li><strong>Re-run a channel and only the new videos are fetched</strong> &mdash; each
                     folder keeps a manifest of the video ids already written, matched on the id
                     rather than the title</li>
@@ -245,9 +256,10 @@ export SIMPLE_EIFFEL=/d/prod    <span class="comment"># where the simple_* libra
                     screen-capture and audio routes are designed, not built.
                 </li>
                 <li>
-                    A channel harvest reads the <strong>Videos</strong> tab. A channel that keeps
-                    its content in playlists or streams rather than there will list fewer videos
-                    than you expect, and Shorts are never included. The category pass needs a text
+                    A channel harvest reads the <strong>Videos</strong> and <strong>Live</strong>
+                    tabs. A channel that keeps content only in playlists or Shorts will list fewer
+                    videos than you expect, and a stream's transcript is only as good as YouTube's
+                    caption track for it. The category pass needs a text
                     model in Ollama; without one the harvest says so and fetches everything under
                     <code>Uncategorized</code> rather than stopping.
                 </li>

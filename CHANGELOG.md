@@ -6,6 +6,101 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [1.16.0] - 2026-10-06 — the Live tab
+
+Larry, 2026-10-06: the history channels on his harvest list (Lanier
+Theological Library, Albright Live, Digital Hammurabi, Gresham and
+others) keep many of their recordings under **Live**, which a
+Videos-only harvest misses.
+
+### Removed
+
+- **The `ocr_cairo_gui` target is retired** (Larry, 2026-10-06). It was the M3 prototype, a hand-drawn
+  cairo face built on the way to the current app; release 1.8.0 made the cairo face the product, and
+  the product has since moved onto simple_widgets (`OCR_SW_MAIN_WINDOW`). The prototype had stopped
+  building against current simple_cairo. Its target block, the `ocr_cairo/` cluster (OCR_CAIRO_APP,
+  OCR_CAIRO_GUI, `ocr_cairo_win.h`, RUN_LOG, first-frame PNG) and its EIFGENs folder are gone; git
+  history keeps them.
+- The two PowerShell helpers the product still uses moved from `ocr_cairo/` to a new **`scripts/`**
+  folder: `winocr_boxes.ps1` (word boxes for the figure finder) and `winocr_label.ps1`. The installer
+  sources and `OCR_CYCLE.boxes_script_path`'s development fallback now point there.
+
+### Added — channel identity (work from 2026-09-19, first released here)
+
+- **`OCR_CHANNEL_CARD`**: each channel folder keeps a `_channel.md` card holding the channel's
+  `UC...` id. `belongs_to` refuses a harvest that would pour one channel into another channel's
+  folder, because a display name is not an identity (many churches share one name).
+- **`OCR_CHANNEL_REGISTRY`**: the root that holds the channel folders keeps `_channels.tsv` (read
+  by the software, keyed by channel id) and `_channels.md` (the same list for a person, regenerated
+  each time), so a later run knows where a channel already lives even after it renames itself.
+
+### Fixed
+
+- **Recurring series no longer overwrite each other.** `OCR_VIDEO_QUEUE` now treats the file names
+  already in the target folder as taken (`set_reserved_names`). Before, two videos whose titles
+  shortened to the same name in different fetch batches were appended into one file. Measured
+  2026-09-19 on a 1,298-video channel: 15 videos had landed in 5 files. The Video tab is unchanged.
+
+### Added
+
+- A channel harvest reads the **Live** tab (past streams, served at
+  `/streams`) as well as **Videos**, by default. The sweep walks the
+  wanted tabs in order with the same paging, and a video listed under
+  both is kept once, as a Videos entry.
+- `tab: videos` or `tab: streams` in each harvested transcript's front
+  matter; a sixth column in the folder's `.harvested.tsv` manifest; and
+  in the index, a count per tab and the tab after every entry. A
+  manifest row written before the column reads back with no tab, and the
+  next harvest fills it in from the listing.
+- **Upcoming and live-now streams are skipped and noted.** The listing's
+  thumbnail badge says `Upcoming` (with a "Scheduled for" line) where a
+  finished video's says its length, so they are set aside without a
+  request, named in the log, counted in the done line and the index, and
+  never recorded: the next run finds them finished. Verified against
+  `@LanierTheologicalLibrary`, whose Live tab opened on two scheduled
+  streams.
+- `--tabs videos,streams` (also `live`, `both`, `all`) chooses the tabs
+  for `--channel`; `--limit <n>` fetches at most *n* new transcripts;
+  `--list-only` reads the listing and reports it per tab, writing nothing.
+- *Include the Live tab (past streams)* on the Video tab, on by default,
+  stored as `harvest_streams_tab` (with `harvest_videos_tab`) in
+  `settings.json`. The Harvest Channel button and `--channel` run the
+  same `OCR_CHANNEL_HARVEST`.
+- Eight tests: tab-list parsing, the wanted-tab walk, badge reading,
+  dedupe across tabs, front matter, the manifest's tab column, the
+  index, and the settings. 126 pass.
+
+### Changed
+
+- **Existing `--channel` invocations now include the Live tab.** On a
+  channel with hundreds of hours of streams the first run after this is
+  a long one; `--tabs videos` restores the old reach, and `--limit`
+  takes it in pieces.
+- A Live-tab stream refused for having no caption track is logged as
+  "no captions yet": YouTube makes a long broadcast's track hours after
+  it ends, and the next run asks again.
+- The caption-track fetch waits up to 90 seconds instead of 20, since
+  the track of a six-hour stream is megabytes of json3. The player
+  lookup keeps its 20.
+- The end-of-listing guard asks whether a continuation page gave
+  anything new *to its own tab*, not to the harvest. A channel that also
+  lists its streams under Videos would otherwise have ended the Live
+  sweep at its first continuation page.
+
+### Notes
+
+- Live check, 2026-10-06, `--list-only`: `@AlbrightLive` 96 under
+  Videos and 17 under Live, 113 in all from 6 pages in 6 seconds;
+  `@LanierTheologicalLibrary` 201 and 17, with 2 upcoming streams
+  skipped, 218 from 9 pages in 5 seconds. One Live transcript fetched
+  from each, end to end: Lanier's two-hour stream came through clean
+  (83 KB); Albright's is mostly `[Music]`, which is that stream's own
+  auto-caption track, not the harvest.
+- A tab whose listing fits on one page costs one extra request: the
+  first continuation token in such a reply reloads the same listing,
+  and the guard above ends it when nothing new comes back.
+
+
 ## [1.15.0] - 2026-09-19 — point at a channel, get every transcript
 
 Larry: a channel, not a link. Clicking Share on five hundred videos to

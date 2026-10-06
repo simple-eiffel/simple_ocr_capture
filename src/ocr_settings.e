@@ -39,6 +39,8 @@ feature {NONE} -- Initialization
 			create category_model.make_empty
 			channel_batch_size := Default_channel_batch_size
 			categorize_channel := True
+			harvest_videos_tab := True
+			harvest_streams_tab := True
 			save_text := True
 			save_image := True
 			add_separators := True
@@ -171,6 +173,16 @@ feature -- Access: channel harvest
 	categorize_channel: BOOLEAN
 			-- Should the local model read the harvested titles and file
 			-- each video under a category of its own devising?
+
+	harvest_videos_tab: BOOLEAN
+			-- Does a harvest read the channel's Videos tab?
+
+	harvest_streams_tab: BOOLEAN
+			-- Does a harvest read the channel's Live tab - its past
+			-- streams, which the Videos tab does not list? On by default:
+			-- a lecture library or a weekly broadcast keeps most of its
+			-- recordings there, and a harvest without it returns part of
+			-- the channel while reporting success.
 
 	category_model: STRING_8
 			-- The text model that does the filing. Empty means "find
@@ -567,6 +579,19 @@ feature -- Element change
 			set: categorize_channel = a_flag
 		end
 
+	set_channel_tabs (a_videos, a_streams: BOOLEAN)
+			-- Harvest the Videos tab when `a_videos', the Live tab when
+			-- `a_streams'.
+		require
+			at_least_one: a_videos or a_streams
+		do
+			harvest_videos_tab := a_videos
+			harvest_streams_tab := a_streams
+		ensure
+			videos_set: harvest_videos_tab = a_videos
+			streams_set: harvest_streams_tab = a_streams
+		end
+
 	set_category_model (a_model: READABLE_STRING_8)
 		do
 			create category_model.make_from_string (a_model)
@@ -911,6 +936,8 @@ feature {NONE} -- Persistence implementation
 			Result.append ("  %"channel_folder_name%": " + u.quoted (channel_folder_name) + ",%N")
 			Result.append ("  %"channel_batch_size%": " + channel_batch_size.out + ",%N")
 			Result.append ("  %"categorize_channel%": " + categorize_channel.out.as_lower + ",%N")
+			Result.append ("  %"harvest_videos_tab%": " + harvest_videos_tab.out.as_lower + ",%N")
+			Result.append ("  %"harvest_streams_tab%": " + harvest_streams_tab.out.as_lower + ",%N")
 			Result.append ("  %"category_model%": " + u.quoted (category_model) + ",%N")
 			Result.append ("  %"capture_index%": " + capture_index.out + "%N")
 			Result.append ("}%N")
@@ -949,6 +976,14 @@ feature {NONE} -- Persistence implementation
 				channel_batch_size := Default_channel_batch_size
 			end
 			categorize_channel := boolean_from (a_obj, "categorize_channel", categorize_channel)
+			harvest_videos_tab := boolean_from (a_obj, "harvest_videos_tab", harvest_videos_tab)
+			harvest_streams_tab := boolean_from (a_obj, "harvest_streams_tab", harvest_streams_tab)
+			if not harvest_videos_tab and not harvest_streams_tab then
+					-- A harvest of no tabs would list nothing and fail;
+					-- a hand-edited file that asks for that gets both.
+				harvest_videos_tab := True
+				harvest_streams_tab := True
+			end
 			if attached a_obj.string_item ({STRING_32} "category_model") as al_s then
 				category_model := narrowed (al_s)
 			end
@@ -1107,5 +1142,6 @@ invariant
 		and channel_folder_name /= Void
 		and category_model /= Void
 	channel_batch_usable: channel_batch_size >= 1 and channel_batch_size <= Max_channel_batch_size
+	some_channel_tab: harvest_videos_tab or harvest_streams_tab
 
 end

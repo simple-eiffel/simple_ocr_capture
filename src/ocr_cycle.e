@@ -654,7 +654,7 @@ feature {NONE} -- Figures
 
 	boxes_script_path: detachable STRING_32
 			-- winocr_boxes.ps1 beside the executable (installed), or
-			-- in the repository's ocr_cairo (development); Void when
+			-- in the repository's scripts folder (development); Void when
 			-- neither exists.
 		local
 			l_dir: STRING_32
@@ -662,7 +662,7 @@ feature {NONE} -- Figures
 			l_dir := executable_directory
 			Result := l_dir + {STRING_32} "winocr_boxes.ps1"
 			if not file_exists (Result) then
-				Result := l_dir + {STRING_32} "..\..\..\ocr_cairo\winocr_boxes.ps1"
+				Result := l_dir + {STRING_32} "..\..\..\scripts\winocr_boxes.ps1"
 				if not file_exists (Result) then
 					Result := Void
 				end

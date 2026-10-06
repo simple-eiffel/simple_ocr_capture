@@ -186,7 +186,7 @@ feature -- Basic operations
 		do
 			last_error.wipe_out
 			last_json3.wipe_out
-			if http.get (json3_url (tracks.i_th (a_index).base_url), Timeout_seconds) then
+			if http.get (json3_url (tracks.i_th (a_index).base_url), Track_timeout_seconds) then
 				last_json3 := decoded (http.last_body)
 				if last_json3.is_empty then
 					last_error := {STRING_32} "YouTube answered the caption request with an empty track (a client gate, not a network fault)."
@@ -252,6 +252,12 @@ feature {NONE} -- Implementation
 	Player_url: STRING_8 = "https://www.youtube.com/youtubei/v1/player?prettyPrint=false"
 
 	Timeout_seconds: INTEGER = 20
+
+	Track_timeout_seconds: INTEGER = 90
+			-- For the caption track itself, which is the one reply whose
+			-- size follows the video's length: a six-hour stream's track
+			-- is megabytes of json3 where a sermon's is a few hundred KB,
+			-- and twenty seconds is not a fair wait for it on a slow line.
 
 	reset
 		do

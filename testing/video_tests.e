@@ -220,6 +220,67 @@ feature -- Test: OCR_VIDEO_RUN
 				l_run.safe_file_stem (l_title).item (l_run.safe_file_stem (l_title).count).is_space)
 		end
 
+	test_queue_names_avoid_files_already_written
+			-- The cross-batch collision, which cost ten transcripts.
+			--
+			-- `distinct_name' saw only the rows in the queue, and a fetch
+			-- pass clears finished rows between batches. Two videos whose
+			-- titles shorten to one file name in DIFFERENT batches both
+			-- passed it, and the second was appended to the first one's
+			-- file - one note holding several sermons under one video's
+			-- front matter, with nothing reported. Measured on a
+			-- 1,298-video channel: 15 videos in 5 files.
+		note
+			testing: "covers/{OCR_VIDEO_QUEUE}.reserve_name"
+		local
+			l_queue, l_fresh: OCR_VIDEO_QUEUE
+			l_settings: OCR_SETTINGS
+			l_names: ARRAYED_LIST [STRING_32]
+			l_item: OCR_VIDEO_ITEM
+		do
+			create l_settings
+			create l_queue.make (l_settings)
+			create l_item.make ("https://youtu.be/fouffdu6dDk", l_settings)
+			create l_names.make (1)
+			l_names.extend ({STRING_32} "The Book of John.md")
+			l_queue.set_reserved_names (l_names)
+
+			assert_true ("a file already written is taken",
+				l_queue.has_file_name ({STRING_32} "The Book of John.md", Void))
+			assert_true ("and case does not let it through",
+				l_queue.has_file_name ({STRING_32} "the book of JOHN.md", Void))
+			assert_true ("a name nobody holds is free",
+				not l_queue.has_file_name ({STRING_32} "Something Else.md", Void))
+			assert_true ("so the next row is numbered past it",
+				l_queue.distinct_name ({STRING_32} "The Book of John.md", l_item).same_string_general ("The Book of John (2).md"))
+
+				-- ---- the sequence that actually happens, and that the
+				-- first version of this test did NOT exercise ----
+				--
+				-- A row is in the queue holding a name, the batch reserves
+				-- that name, and only THEN is the row cleared. The first
+				-- fix asked `has_file_name' inside `reserve_name', which
+				-- at this instant still sees the row itself, concluded the
+				-- name was accounted for, reserved nothing, and let the
+				-- row's removal free it again. The suite stayed green and
+				-- three more transcripts collided on the re-run.
+			create l_fresh.make (l_settings)
+			assert_integers_equal ("a clean queue", 0, l_fresh.count)
+			assert_integers_equal ("one row added", 1, l_fresh.add_links ("https://youtu.be/fouffdu6dDk"))
+			l_fresh.items.first.set_file_name ({STRING_32} "Weekly Service.md")
+			assert_true ("the row holds it", l_fresh.has_file_name ({STRING_32} "Weekly Service.md", Void))
+				-- reserved WHILE its own row still holds it
+			l_fresh.reserve_name ({STRING_32} "Weekly Service.md")
+			l_fresh.remove (1)
+			assert_integers_equal ("row gone", 0, l_fresh.count)
+			assert_true ("STILL taken once the row is gone",
+				l_fresh.has_file_name ({STRING_32} "Weekly Service.md", Void))
+			assert_true ("so the next batch is numbered past it",
+				l_fresh.distinct_name ({STRING_32} "Weekly Service.md", l_item).same_string_general ("Weekly Service (2).md"))
+			l_fresh.reserve_name ({STRING_32} "Weekly Service.md")
+			assert_integers_equal ("reserving twice does not double it", 1, l_fresh.reserved_names.count)
+		end
+
 	test_blocking_before_probe
 		note
 			testing: "covers/{OCR_VIDEO_RUN}.blocking_reason"

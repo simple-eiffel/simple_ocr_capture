@@ -383,6 +383,7 @@ feature -- Settings round trip
 			field_channel_root.set_text (settings.channel_root_or_default)
 			field_channel_batch.set_value (settings.channel_batch_size)
 			check_categorize.set_checked (settings.categorize_channel)
+			check_streams.set_checked (settings.harvest_streams_tab)
 			channel_status.set_text (harvest.progress_line)
 			check_ctrl.set_checked (settings.hotkey_modifiers.bit_and ({OCR_HOTKEY}.Mod_control) /= 0)
 			check_alt.set_checked (settings.hotkey_modifiers.bit_and ({OCR_HOTKEY}.Mod_alt) /= 0)
@@ -562,7 +563,7 @@ feature {NONE} -- Building
 			create Result.make
 			Result := Result.with_gap (10.0)
 			Result.put (create {SW_SEPARATOR}.make_labeled ("Whole channel"))
-			Result.put ((create {SW_LABEL}.make_ui ("Give a channel - a @handle, a /channel/ link, or just the name - and every video it lists under Videos is harvested: the listing is read a page at a time, the local model reads the titles and names categories for this channel, and the transcripts are written in batches to a folder named after the channel. Run it again later and only the new videos are fetched.")).as_muted.with_wrap)
+			Result.put ((create {SW_LABEL}.make_ui ("Give a channel - a @handle, a /channel/ link, or just the name - and every video it lists under Videos and under Live (its past streams) is harvested: the listing is read a page at a time, the local model reads the titles and names categories for this channel, and the transcripts are written in batches to a folder named after the channel. Run it again later and only the new videos are fetched.")).as_muted.with_wrap)
 			create field_channel_url.make_single_line ("")
 			field_channel_url.set_spellcheck (False)
 			field_channel_url.set_grow (1.0)
@@ -584,9 +585,11 @@ feature {NONE} -- Building
 			Result.put (row)
 			create field_channel_batch.make (settings.Default_channel_batch_size, 1, settings.Max_channel_batch_size, agent on_channel_batch_changed)
 			create check_categorize.make ("Let the local model sort the videos into categories", True, agent on_categorize_changed)
+			create check_streams.make ("Include the Live tab (past streams)", True, agent on_streams_changed)
 			create row.make
 			row := row.add (labelled ("Batch size", field_channel_batch))
 				.add (check_categorize)
+				.add (check_streams)
 			Result.put (row)
 			create channel_status.make_ui ("")
 			channel_status := channel_status.as_muted.with_wrap
@@ -1128,6 +1131,17 @@ feature {NONE} -- Channel harvest
 		do
 			if not is_loading then
 				settings.set_categorize_channel (a_on)
+				settings.store
+			end
+		end
+
+	on_streams_changed (a_on: BOOLEAN)
+			-- Read the Live tab or not. The Videos tab stays on whenever
+			-- Live is turned off, since a harvest of no tab lists nothing;
+			-- choosing Live alone is the command line's `--tabs streams'.
+		do
+			if not is_loading then
+				settings.set_channel_tabs (settings.harvest_videos_tab or not a_on, a_on)
 				settings.store
 			end
 		end
@@ -1920,6 +1934,7 @@ feature {NONE} -- State
 	field_channel_root: SW_TEXT_BOX attribute create Result.make_single_line ("") end
 	field_channel_batch: SW_NUMBER_BOX attribute create Result.make (5, 1, 50, Void) end
 	check_categorize: SW_CHECK_BOX attribute create Result.make ("", False, Void) end
+	check_streams: SW_CHECK_BOX attribute create Result.make ("", False, Void) end
 	button_channel: SW_BUTTON attribute create Result.make ("Harvest Channel", Void) end
 	channel_status: SW_LABEL attribute create Result.make_ui ("") end
 	field_move_drive: SW_TEXT_BOX attribute create Result.make_single_line ("") end
