@@ -647,7 +647,7 @@ feature {NONE} -- Building
 
 	output_page: SW_COLUMN
 		local
-			row, folder_row: SW_ROW
+			folder_row: SW_ROW
 		do
 			create Result.make
 			Result := Result.with_gap (10.0)
