@@ -1,7 +1,7 @@
 # Feasibility: video caption intake (YouTube CC roll to transcript)
 
 Requested by Larry 2026-09-11, studied against v1.11.0 and the sample
-`C:\Users\LJR19\Videos\YouTube-CC-30-second-example.mp4` (1896x1068,
+`C:\Users\user\Videos\YouTube-CC-30-second-example.mp4` (1896x1068,
 30 fps, 910 frames, 30.4 s, h264 + aac).
 
 Verdict up front: **possible, and cheaper than page capture.** The right

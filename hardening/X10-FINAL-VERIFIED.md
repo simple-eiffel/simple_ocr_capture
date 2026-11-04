@@ -89,7 +89,7 @@ capture, and its observable behaviour is byte-identical.
 
 ```
 ===== 6. --images end to end =====
-folder: C:\Users\LJR19\AppData\Local\Temp\x10\Book
+folder: C:\Users\user\AppData\Local\Temp\x10\Book
 leaf:   Book
 count:  3
 size:   15 bytes
