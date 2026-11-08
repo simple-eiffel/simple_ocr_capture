@@ -21,6 +21,9 @@
 model, and append the text to a single file — page after page, unattended if you
 want. Part of the [Simple Eiffel](https://github.com/simple-eiffel) ecosystem.
 
+> **Windows only.** It drives Windows reading apps through UI Automation and Windows input. There is no macOS or Linux version, and none is planned.
+
+
 ## Status
 
 ✅ **Production** — v1.16.0
