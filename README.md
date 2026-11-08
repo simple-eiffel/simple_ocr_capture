@@ -14,7 +14,7 @@
   <img src="https://img.shields.io/badge/License-MIT-blue.svg" alt="License: MIT">
   <img src="https://img.shields.io/badge/Eiffel-25.02-purple.svg" alt="Eiffel 25.02">
   <img src="https://img.shields.io/badge/DBC-Contracts-green.svg" alt="Design by Contract">
-  <img src="https://img.shields.io/badge/Platform-Windows%20x64-lightgrey.svg" alt="Windows x64">
+  <img src="https://img.shields.io/badge/platform-Windows%20only-0078D6?logo=windows&logoColor=white" alt="Windows only">
 </p>
 
 **Read a book through your screen.** Capture a region, run it through a local OCR
@@ -22,7 +22,6 @@ model, and append the text to a single file — page after page, unattended if y
 want. Part of the [Simple Eiffel](https://github.com/simple-eiffel) ecosystem.
 
 > **Windows only.** It drives Windows reading apps through UI Automation and Windows input. There is no macOS or Linux version, and none is planned.
-
 
 ## Status
 
