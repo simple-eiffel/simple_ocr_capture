@@ -23,6 +23,7 @@
 #define AppPublisher   "Larry Rix"
 #define AppExeName     "simple_ocr_capture.exe"
 #define SourceExe      "..\EIFGENs\ocr_capture\F_code\simple_ocr_capture.exe"
+#define CairoDir       "..\..\simple_cairo\runtime\windows"
 
 [Setup]
 AppId={{9F2C4A31-7D58-4E60-B1A7-3C6E24D9B085}
@@ -57,7 +58,10 @@ Name: "desktopicon"; Description: "Create a &desktop shortcut"; GroupDescription
 
 [Files]
 Source: "{#SourceExe}"; DestDir: "{app}"; Flags: ignoreversion
-Source: "..\EIFGENs\ocr_capture\F_code\cairo.dll"; DestDir: "{app}"; Flags: ignoreversion
+; cairo 1.18.0 and the six libraries it loads: the fleet's one set, owned by simple_cairo
+; (BUILD_STANDARDS section 9), with their licenses. Never a copy from F_code or elsewhere.
+Source: "{#CairoDir}\*.dll"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#CairoDir}\licenses\*"; DestDir: "{app}\licenses\cairo"; Flags: ignoreversion
 Source: "..\EIFGENs\ocr_capture\F_code\ocr_yt_session.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\EIFGENs\ocr_capture\F_code\WebView2Loader.dll"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\scripts\winocr_label.ps1"; DestDir: "{app}"; Flags: ignoreversion
